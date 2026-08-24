@@ -56,6 +56,26 @@ fun BuyScreen() {
     val context = LocalContext.current
     var online by remember { mutableStateOf(isOnline(context)) }
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
+
+    // Session-perzisztencia: cookie-k kiírása leállításkor és képernyő-elhagyáskor is,
+    // így a webes bejelentkezés app-újraindítás után is megmarad
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE || event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                try {
+                    CookieManager.getInstance().flush()
+                } catch (_: Exception) {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            try {
+                CookieManager.getInstance().flush()
+            } catch (_: Exception) {}
+        }
+    }
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = if (progress in 0f..1f) ProgressIndicatorDefaults.ProgressAnimationSpec else spring(

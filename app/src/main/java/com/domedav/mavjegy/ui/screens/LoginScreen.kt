@@ -18,6 +18,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,8 +84,18 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    // Regisztráció mezők
+    var regLastName by rememberSaveable { mutableStateOf("") }
+    var regFirstName by rememberSaveable { mutableStateOf("") }
+    var regEmail by rememberSaveable { mutableStateOf("") }
+    var regBirthDate by rememberSaveable { mutableStateOf("") }
+    var regPassword by rememberSaveable { mutableStateOf("") }
+    var regPasswordAgain by rememberSaveable { mutableStateOf("") }
+    var showForgotDialog by remember { mutableStateOf(false) }
+    var forgotEmail by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var info by remember { mutableStateOf<String?>(null) }
     var appeared by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -121,10 +132,70 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                 if (result.isSuccess) {
                     onLoggedIn()
                 } else {
-                    error = "Sikertelen bejelentkezés: ${
-                        result.exceptionOrNull()?.message ?: "ismeretlen hiba"
-                    }"
+                    error = result.exceptionOrNull()?.message ?: "Sikertelen bejelentkezés"
                 }
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    val submitRegistration: () -> Unit = submitRegistration@{
+        if (loading) return@submitRegistration
+        if (regLastName.isBlank() || regFirstName.isBlank() || regEmail.isBlank() ||
+            regBirthDate.isBlank() || regPassword.isBlank() || regPasswordAgain.isBlank()
+        ) {
+            error = "Kérlek tölts ki minden mezőt"
+            return@submitRegistration
+        }
+        if (regPassword != regPasswordAgain) {
+            error = "A két jelszó nem egyezik"
+            return@submitRegistration
+        }
+        // yyyy.MM.dd. -> yyyy-MM-dd
+        val birthIso = try {
+            val p = regBirthDate.trim().split(".")
+            String.format("%04d-%02d-%02d", p[0].trim().toInt(), p[1].trim().toInt(), p[2].trim().toInt())
+        } catch (_: Exception) {
+            ""
+        }
+        if (birthIso.isBlank()) {
+            error = "Érvénytelen születési dátum (yyyy.MM.dd.)"
+            return@submitRegistration
+        }
+        focusManager.clearFocus()
+        loading = true
+        error = null
+        scope.launch {
+            try {
+                val result = api.register(regEmail.trim(), regLastName.trim(), regFirstName.trim(), birthIso, regPassword)
+                result.fold(
+                    onSuccess = { _ ->
+                        info = "Regisztráció sikeres! A megerősítéshez kövesd az emailben kapott információkat."
+                        step = 0
+                    },
+                    onFailure = { e -> error = e.message ?: "Sikertelen regisztráció" }
+                )
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    val sendForgotPassword: () -> Unit = sendForgot@{
+        if (loading || forgotEmail.isBlank()) return@sendForgot
+        loading = true
+        error = null
+        scope.launch {
+            try {
+                val result = api.forgotPassword(forgotEmail.trim())
+                result.fold(
+                    onSuccess = { msg ->
+                        showForgotDialog = false
+                        info = msg ?: "Új jelszó elküldve a(z) ${forgotEmail.trim()} címre"
+                    },
+                    onFailure = { e -> error = e.message ?: "Sikertelen kérés" }
+                )
             } finally {
                 loading = false
             }
@@ -235,7 +306,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                              Spacer(modifier = Modifier.height(6.dp))
                              StaggeredAppear(index = 1) {
                                  Text(
-                                     text = "A jegy.mav.hu fiókod email címe",
+                                     text = "A MÁV fiókod email címe",
                                      style = MaterialTheme.typography.bodyMedium,
                                      color = MaterialTheme.colorScheme.onSurfaceVariant
                                  )
@@ -274,9 +345,27 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     )
                                 }
                             }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            StaggeredAppear(index = 4) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.material3.TextButton(onClick = { step = 2 }) {
+                                        Text("Fiók létrehozása")
+                                    }
+                                    androidx.compose.material3.TextButton(onClick = {
+                                        forgotEmail = email
+                                        showForgotDialog = true
+                                    }) {
+                                        Text("Elfelejtett jelszó?")
+                                    }
+                                }
+                            }
                         }
 
-                        else -> {
+                        1 -> {
                             // A megadott email cím megjelenik a jelszó-lépés tetején
                             Surface(
                                 shape = PillShape,
@@ -311,13 +400,13 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                  )
                              }
                              Spacer(modifier = Modifier.height(6.dp))
-                            StaggeredAppear(index = 1) {
-                                Text(
-                                    text = "A fiókod jelszava",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                             StaggeredAppear(index = 1) {
+                                 Text(
+                                     text = "A MÁV fiókod jelszava",
+                                     style = MaterialTheme.typography.bodyMedium,
+                                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                                 )
+                             }
                             Spacer(modifier = Modifier.height(20.dp))
                             StaggeredAppear(index = 2) {
                                 OutlinedTextField(
@@ -382,9 +471,146 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                 }
                             }
                         }
+
+                        2 -> {
+                            // Regisztráció
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CookieShape,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.clickable {
+                                        focusManager.clearFocus()
+                                        error = null
+                                        step = 0
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = "Vissza a bejelentkezéshez",
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.size(12.dp))
+                                Text(
+                                    text = "Fiók létrehozása",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(
+                                    value = regLastName,
+                                    onValueChange = { regLastName = it },
+                                    label = { Text("Vezetéknév") },
+                                    singleLine = true,
+                                    enabled = !loading,
+                                    shape = FieldShape,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = regFirstName,
+                                    onValueChange = { regFirstName = it },
+                                    label = { Text("Keresztnév") },
+                                    singleLine = true,
+                                    enabled = !loading,
+                                    shape = FieldShape,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = regEmail,
+                                onValueChange = { regEmail = it },
+                                label = { Text("Email cím") },
+                                singleLine = true,
+                                enabled = !loading,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Email,
+                                    imeAction = ImeAction.Next
+                                ),
+                                shape = FieldShape,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = regBirthDate,
+                                onValueChange = { regBirthDate = it },
+                                label = { Text("Születési dátum (yyyy.MM.dd.)") },
+                                singleLine = true,
+                                enabled = !loading,
+                                shape = FieldShape,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = regPassword,
+                                onValueChange = { regPassword = it },
+                                label = { Text("Jelszó") },
+                                singleLine = true,
+                                enabled = !loading,
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Password,
+                                    imeAction = ImeAction.Next
+                                ),
+                                shape = FieldShape,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = regPasswordAgain,
+                                onValueChange = { regPasswordAgain = it },
+                                label = { Text("Jelszó újra") },
+                                singleLine = true,
+                                enabled = !loading,
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Password,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(onDone = { submitRegistration() }),
+                                shape = FieldShape,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { submitRegistration() },
+                                enabled = !loading,
+                                shape = FieldShape,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp)
+                            ) {
+                                if (loading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        strokeWidth = 2.5.dp
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Regisztráció",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
+
+                    // Sikeres művelet (regisztráció / jelszó-kérés) infó snackbar
+                    info?.let { msg ->
+                        com.domedav.mavjegy.ui.components.DismissibleSnackbar(
+                            message = msg,
+                            onDismiss = { info = null },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
 
                     // Saját, eltűntethető hiba-snackbar (swipe balra/jobbra vagy lehúzás)
                     error?.let { err ->
@@ -401,10 +627,45 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
         }
     }
 
-    BackHandler(enabled = step == 1) {
+    BackHandler(enabled = step > 0) {
         focusManager.clearFocus()
         error = null
         step = 0
+    }
+
+    // Elfelejtett jelszó dialógus
+    if (showForgotDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showForgotDialog = false },
+            title = { Text("Elfelejtett jelszó") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Új jelszót küldünk erre a címre:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = forgotEmail,
+                        onValueChange = { forgotEmail = it },
+                        label = { Text("Email cím") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { sendForgotPassword() }) {
+                    Text("Küldés")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showForgotDialog = false }) {
+                    Text("Mégse")
+                }
+            }
+        )
     }
 }
 
