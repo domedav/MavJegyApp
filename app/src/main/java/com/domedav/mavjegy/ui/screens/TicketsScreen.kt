@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,10 +17,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
-import androidx.compose.material.icons.rounded.ConfirmationNumber
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Train
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.PrimaryTabRow
@@ -42,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -184,7 +184,7 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
             ) {
                 Text(
                     text = "Jegyek",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
@@ -233,74 +233,83 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
 @Composable
 private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
     val isValid = purchase.status.trim().equals("Ervenyes", ignoreCase = true)
+    val isPass = purchase.startStation == null
     Card(
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = if (isValid) RoundedCornerShape(28.dp) else RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isValid)
                 MaterialTheme.colorScheme.primaryContainer
             else
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                MaterialTheme.colorScheme.surfaceContainerHighest
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isValid) 4.dp else 0.dp),
+        border = if (!isValid) androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline
+        ) else null,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
     ) {
         Row(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(48.dp)
                     .background(
-                        color = if (isValid) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        color = MaterialTheme.colorScheme.primary,
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (purchase.startStation == null)
+                    imageVector = if (isPass)
                         Icons.Rounded.CalendarMonth
                     else
-                        Icons.Rounded.ConfirmationNumber,
+                        Icons.Rounded.Train,
                     contentDescription = null,
-                    tint = if (isValid) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(30.dp)
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(26.dp)
                 )
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (purchase.startStation != null) {
+                Text(
+                    text = if (isPass) "Bérlet" else "Jegy",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                if (!isPass) {
                     Text(
                         "${purchase.startStation} → ${purchase.endStation ?: ""}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2
-                    )
-                    Text(
-                        "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else {
-                    Text(
-                        "Érvényesség",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Text(
-                        "${formatDate(purchase.validFrom)}\n${formatDate(purchase.validTo)}",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1
                     )
                 }
+                Text(
+                    "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1
+                )
             }
-            Spacer(Modifier.size(4.dp))
-            Text(
-                "%.0f %s".format(purchase.amount, purchase.currency),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
+            Surface(
+                shape = CircleShape,
                 color = MaterialTheme.colorScheme.primary
-            )
+            ) {
+                Text(
+                    text = if (purchase.currency == "HUF")
+                        "%.0f HUF".format(purchase.amount)
+                    else
+                        "%.0f %s".format(purchase.amount, purchase.currency),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
         }
     }
 }

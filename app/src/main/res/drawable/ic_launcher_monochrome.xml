@@ -1,17 +1,17 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="1024" android:viewportHeight="1024">
-    <!-- gőzös körvonalak -->
-    <path android:pathData="M190,300 h56 v90 h-56 z M70,390 a60,60 0 0 1 60,-60 h300 a60,60 0 0 1 60,60 v70 a60,60 0 0 1 -60,60 h-300 a60,60 0 0 1 -60,-60 z"
+    <!-- steam locomotive, side view, facing right: outline only -->
+    <path android:pathData="M316,292 h-64 a10,10 0 0 0 -10,10 v122 h64 v-122 a10,10 0 0 0 -10,-10z"
         android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
-    <path android:pathData="M410,270 h170 v380 h-170 z M486,310 h94 v110 h-94 z"
+    <path android:pathData="M202,582 v-154 a46,46 0 0 1 46,-46 h306 a46,46 0 0 1 46,46 v154 z"
         android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
-    <path android:pathData="M210,588 a52,52 0 1 0 0.01,0z M340,588 a52,52 0 1 0 0.01,0z M575,588 a52,52 0 1 0 0.01,0z"
+    <path android:pathData="M600,582 v-244 a26,26 0 0 1 26,-26 h170 a26,26 0 0 1 26,26 v244 z"
+        android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
+    <path android:pathData="M638,464 v-92 a18,18 0 0 1 18,-18 h60 a18,18 0 0 1 18,18 v92 z"
+        android:strokeColor="#FFFFFF" android:strokeWidth="20" android:fillColor="#00000000"/>
+    <path android:pathData="M254,664 a56,56 0 1 0 112,0 a56,56 0 1 0 -112,0z M286,664 a24,24 0 1 0 48,0 a24,24 0 1 0 -48,0z M426,664 a56,56 0 1 0 112,0 a56,56 0 1 0 -112,0z M458,664 a24,24 0 1 0 48,0 a24,24 0 1 0 -48,0z M664,664 a56,56 0 1 0 112,0 a56,56 0 1 0 -112,0z M696,664 a24,24 0 1 0 48,0 a24,24 0 1 0 -48,0z"
         android:strokeColor="#FFFFFF" android:strokeWidth="22" android:fillColor="#00000000"/>
-    <!-- perjel -->
-    <path android:pathData="M740,250 L800,250 L690,750 L630,750 Z"
-        android:strokeColor="#FFFFFF" android:strokeWidth="24" android:fillColor="#00000000"/>
-    <!-- busz hátulja -->
-    <path android:pathData="M830,300 h200 v420 h-200 z M858,350 h144 v130 h-144 z"
-        android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
+    <path android:pathData="M251,749.0 h542"
+        android:strokeColor="#FFFFFF" android:strokeWidth="20" android:strokeLineCap="round" android:fillColor="#00000000"/>
 </vector>

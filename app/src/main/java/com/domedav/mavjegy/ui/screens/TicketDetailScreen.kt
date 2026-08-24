@@ -2,6 +2,7 @@ package com.domedav.mavjegy.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
@@ -138,13 +140,16 @@ fun TicketDetailScreen(
         ) {
             val screenWpx = with(density) { maxWidth.toPx() }.toInt()
             val barcodeTargetPx = (screenWpx * 2).coerceAtLeast(256)
-            val containerW = constraints.maxWidth.toFloat()
-            val containerH = constraints.maxHeight.toFloat()
-            val horizontalPaddingPx = with(density) { 16.dp.toPx() }
-            val barcodeContainerW = containerW - horizontalPaddingPx * 2f
-            val barcodeContainerH = (containerH - with(density) { 220.dp.toPx() })
+
+            val screenW = constraints.maxWidth.toFloat()
+            val screenH = constraints.maxHeight.toFloat()
+
+            // Barcode zone content inset 25% from each horizontal edge (~50% screen width glyph)
+            val zoneHorizontalInset = screenW * 0.25f
+            val zoneInnerW = screenW - zoneHorizontalInset * 2f
+            val zoneH = (screenH - with(density) { 220.dp.toPx() })
                 .coerceAtLeast(with(density) { 120.dp.toPx() })
-            val displaySize = minOf(barcodeContainerW, barcodeContainerH) * 0.9f
+            val displaySize = minOf(zoneInnerW, zoneH)
 
             LaunchedEffect(serialized, barcodeType, barcodeTargetPx, fetchTrigger) {
                 generatingBarcode = true
@@ -190,7 +195,7 @@ fun TicketDetailScreen(
                 if (errorMessage != null && !hasCached && details == null) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = RoundedCornerShape(28.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer
                         )
@@ -217,8 +222,83 @@ fun TicketDetailScreen(
                 }
 
                 details?.let { d ->
-                    InfoAndValidityCard(details = d, purchase = purchase)
+                    val h = displaySize * scale
+                    val maxPanX =
+                        if (scale > 1f) ((displaySize * scale - zoneInnerW) / 2f).coerceAtLeast(0f) else 0f
+                    val maxPanYUp = (0.10f * h).coerceAtLeast(0.10f * displaySize)
+                    val maxPanYDown = (0.60f * h).coerceAtLeast(0.60f * displaySize)
 
+                    fun clampOffsetY(y: Float): Float = y.coerceIn(-maxPanYUp, maxPanYDown)
+
+                    // BARCODE ZONE (top, weight(1f))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clip(RoundedCornerShape(40.dp))
+                            .background(MaterialTheme.colorScheme.inverseSurface)
+                            .pointerInput(barcodeType) {
+                                detectTapGestures(
+                                    onDoubleTap = {
+                                        scale = 1f
+                                        offsetX = 0f
+                                        offsetY = 0f
+                                    }
+                                )
+                            }
+                            .pointerInput(barcodeType, displaySize, zoneInnerW) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    val mpx =
+                                        if (scale > 1f) {
+                                            ((displaySize * scale - zoneInnerW) / 2f).coerceAtLeast(0f)
+                                        } else 0f
+                                    offsetX = if (scale > 1f) {
+                                        (offsetX + pan.x).coerceIn(-mpx, mpx)
+                                    } else 0f
+                                    offsetY = clampOffsetY(offsetY + pan.y)
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = with(density) { zoneHorizontalInset.toDp() }),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val bitmap = barcodeBitmap
+                            when {
+                                bitmap != null -> Image(
+                                    bitmap = bitmap,
+                                    contentDescription = "Vonalkód",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .aspectRatio(1f)
+                                        .width(with(density) { displaySize.toDp() })
+                                        .graphicsLayer {
+                                            scaleX = scale
+                                            scaleY = scale
+                                            translationX = offsetX
+                                            translationY = offsetY
+                                        }
+                                )
+
+                                generatingBarcode -> CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                )
+
+                                else -> Text(
+                                    text = "Vonalkód nem elérhető",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // SEGMENTED TOGGLE (between barcode zone and info card)
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         SegmentedButton(
                             selected = barcodeType == BarcodeGenerator.Type.AZTEC,
@@ -242,62 +322,8 @@ fun TicketDetailScreen(
                         ) { Text("CODE128") }
                     }
 
-                    val maxPanX = ((displaySize * scale - barcodeContainerW) / 2f).coerceAtLeast(0f)
-                    val maxPanY = ((displaySize * scale - barcodeContainerH) / 2f).coerceAtLeast(0f)
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .clip(MaterialTheme.shapes.extraLarge)
-                            .background(MaterialTheme.colorScheme.inverseSurface)
-                            .pointerInput(barcodeType, displaySize, barcodeContainerW, barcodeContainerH) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    scale = (scale * zoom).coerceIn(1f, 5f)
-                                    val mpx =
-                                        ((displaySize * scale - barcodeContainerW) / 2f).coerceAtLeast(0f)
-                                    val mpy =
-                                        ((displaySize * scale - barcodeContainerH) / 2f).coerceAtLeast(0f)
-                                    if (scale > 1f) {
-                                        offsetX = (offsetX + pan.x).coerceIn(-mpx, mpx)
-                                        offsetY = (offsetY + pan.y).coerceIn(-mpy, mpy)
-                                    } else {
-                                        offsetX = 0f
-                                        offsetY = 0f
-                                    }
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val bitmap = barcodeBitmap
-                        when {
-                            bitmap != null -> Image(
-                                bitmap = bitmap,
-                                contentDescription = "Vonalkód",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .aspectRatio(1f)
-                                    .width(with(density) { displaySize.toDp() })
-                                    .graphicsLayer {
-                                        scaleX = scale
-                                        scaleY = scale
-                                        translationX = offsetX.coerceIn(-maxPanX, maxPanX)
-                                        translationY = offsetY.coerceIn(-maxPanY, maxPanY)
-                                    }
-                            )
-
-                            generatingBarcode -> CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                            )
-
-                            else -> Text(
-                                text = "Vonalkód nem elérhető",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    // INFO CARD (below)
+                    InfoAndValidityCard(details = d, purchase = purchase)
                 }
             }
         }
@@ -310,7 +336,7 @@ private fun InfoAndValidityCard(details: TicketDetails, purchase: Purchase) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         )
@@ -323,7 +349,7 @@ private fun InfoAndValidityCard(details: TicketDetails, purchase: Purchase) {
         ) {
             Text(
                 text = titleFor(details, purchase),
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
@@ -343,6 +369,7 @@ private fun InfoAndValidityCard(details: TicketDetails, purchase: Purchase) {
             Text(
                 text = priceText,
                 style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
 
@@ -372,8 +399,8 @@ private fun ValiditySection(validFrom: String?, validTo: String?) {
         val days = ChronoUnit.DAYS.between(now.toLocalDate(), to.toLocalDate().plusDays(1)).coerceAtLeast(0)
         Text(
             text = "még $days nap",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Black,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -389,8 +416,8 @@ private fun ValiditySection(validFrom: String?, validTo: String?) {
     } else {
         Text(
             text = "${fmt(from)} – ${fmt(to)}",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Black,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
