@@ -10,6 +10,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -175,25 +177,30 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
             AnimatedContent(
                 targetState = step,
                 transitionSpec = {
+                    val spec = tween<androidx.compose.ui.unit.IntSize>(durationMillis = 240)
                     if (targetState > initialState) {
-                        slideInHorizontally(
+                        (slideInHorizontally(
                             initialOffsetX = { it },
-                            animationSpec = tween(durationMillis = 200)
-                        ) + fadeIn(animationSpec = tween(durationMillis = 200)) togetherWith
+                            animationSpec = tween(durationMillis = 220)
+                        ) + fadeIn(animationSpec = tween(durationMillis = 220)) +
+                            scaleIn(initialScale = 0.92f, animationSpec = tween(durationMillis = 240))) togetherWith
                             slideOutHorizontally(
                                 targetOffsetX = { -it / 3 },
-                                animationSpec = tween(durationMillis = 200)
-                            ) + fadeOut(animationSpec = tween(durationMillis = 200))
+                                animationSpec = tween(durationMillis = 220)
+                            ) + fadeOut(animationSpec = tween(durationMillis = 160)) +
+                            scaleOut(targetScale = 1.06f, animationSpec = tween(durationMillis = 240))
                     } else {
-                        slideInHorizontally(
+                        (slideInHorizontally(
                             initialOffsetX = { -it },
-                            animationSpec = tween(durationMillis = 200)
-                        ) + fadeIn(animationSpec = tween(durationMillis = 200)) togetherWith
+                            animationSpec = tween(durationMillis = 220)
+                        ) + fadeIn(animationSpec = tween(durationMillis = 220)) +
+                            scaleIn(initialScale = 1.04f, animationSpec = tween(durationMillis = 240))) togetherWith
                             slideOutHorizontally(
                                 targetOffsetX = { it / 3 },
-                                animationSpec = tween(durationMillis = 200)
-                            ) + fadeOut(animationSpec = tween(durationMillis = 200))
-                    }
+                                animationSpec = tween(durationMillis = 220)
+                            ) + fadeOut(animationSpec = tween(durationMillis = 160)) +
+                            scaleOut(targetScale = 0.94f, animationSpec = tween(durationMillis = 240))
+                    }.using(androidx.compose.animation.SizeTransform(clip = false) { _, _ -> spec })
                 },
                 label = "stepContent"
             ) { currentStep ->
@@ -217,21 +224,22 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                         modifier = Modifier.padding(10.dp)
                                     )
                                 }
-                                Spacer(modifier = Modifier.size(12.dp))
-                                Text(
-                                    text = "Email",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            StaggeredAppear(index = 1) {
-                                Text(
-                                    text = "A jegy.mav.hu fiókod email címe",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                                 Spacer(modifier = Modifier.size(12.dp))
+                                 Text(
+                                     text = "Email",
+                                     style = MaterialTheme.typography.titleLarge,
+                                     fontWeight = FontWeight.Bold,
+                                     color = MaterialTheme.colorScheme.onSurface
+                                 )
+                             }
+                             Spacer(modifier = Modifier.height(6.dp))
+                             StaggeredAppear(index = 1) {
+                                 Text(
+                                     text = "A jegy.mav.hu fiókod email címe",
+                                     style = MaterialTheme.typography.bodyMedium,
+                                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                                 )
+                             }
                             Spacer(modifier = Modifier.height(20.dp))
                             StaggeredAppear(index = 2) {
                                 OutlinedTextField(
@@ -269,6 +277,19 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                         }
 
                         else -> {
+                            // A megadott email cím megjelenik a jelszó-lépés tetején
+                            Surface(
+                                shape = PillShape,
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            ) {
+                                Text(
+                                    text = email.trim(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
                                     shape = CookieShape,
@@ -281,14 +302,15 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                         modifier = Modifier.padding(10.dp)
                                     )
                                 }
-                                Spacer(modifier = Modifier.size(12.dp))
-                                Text(
-                                    text = "Jelszó",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
+                                 Spacer(modifier = Modifier.size(12.dp))
+                                 Text(
+                                     text = "Jelszó",
+                                     style = MaterialTheme.typography.titleLarge,
+                                     fontWeight = FontWeight.Bold,
+                                     color = MaterialTheme.colorScheme.onSurface
+                                 )
+                             }
+                             Spacer(modifier = Modifier.height(6.dp))
                             StaggeredAppear(index = 1) {
                                 Text(
                                     text = "A fiókod jelszava",
@@ -364,40 +386,13 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    AnimatedVisibility(
-                        visible = error != null,
-                        enter = slideInVertically(
-                            initialOffsetY = { it / 2 },
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
-                        ) + fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)),
-                        exit = slideOutVertically(targetOffsetY = { it / 2 }) +
-                            fadeOut(animationSpec = spring(stiffness = Spring.StiffnessHigh))
-                    ) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            shape = PillShape,
+                    // Saját, eltűntethető hiba-snackbar (swipe balra/jobbra vagy lehúzás)
+                    error?.let { err ->
+                        com.domedav.mavjegy.ui.components.DismissibleSnackbar(
+                            message = err,
+                            onDismiss = { error = null },
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ErrorOutline,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.size(10.dp))
-                                Text(
-                                    text = error.orEmpty(),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
+                        )
                     }
                 }
             }

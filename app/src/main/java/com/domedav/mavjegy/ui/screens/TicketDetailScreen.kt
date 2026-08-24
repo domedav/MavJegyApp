@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.zIndex
 import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
 import com.domedav.mavjegy.data.TicketCache
@@ -135,6 +136,7 @@ fun TicketDetailScreen(
     var useServerImage by remember { mutableStateOf(false) }
     var serverImageBytes by remember { mutableStateOf<ByteArray?>(null) }
     var serverImageLoading by remember { mutableStateOf(false) }
+    var serverImageError by remember { mutableStateOf<String?>(null) }
     val serverBitmap = remember(serverImageBytes) {
         serverImageBytes?.let { bytes ->
             runCatching {
@@ -148,10 +150,10 @@ fun TicketDetailScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     var ownerEdit by remember(purchase.id) { mutableStateOf(PassOwnerPrefs.load(context, purchase.id)) }
 
-    // Utastípus kód -> emberi név (GetAlapadatok)
+    // Utastípus kód -> emberi név (GetAlapadatok, offline cache-elve)
     var typeNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     LaunchedEffect(Unit) {
-        typeNames = runCatching { api.getTypeNames() }.getOrDefault(emptyMap())
+        typeNames = runCatching { api.getTypeNames(context) }.getOrDefault(emptyMap())
     }
 
     fun resolveType(code: String?): String? {
@@ -176,6 +178,15 @@ fun TicketDetailScreen(
     var offsetY by remember { mutableStateOf<Float?>(null) }
 
     val expired = isPurchaseExpired(purchase)
+
+    // Szerverkép / egyéb hibák snackbarban
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    LaunchedEffect(serverImageError) {
+        serverImageError?.let {
+            snackbarHostState.showSnackbar(it)
+            serverImageError = null
+        }
+    }
 
     LaunchedEffect(purchase.id, fetchTrigger) {
         loadingDetails = true
@@ -208,6 +219,12 @@ fun TicketDetailScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
     ) {
+        androidx.compose.material3.SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .zIndex(2f)
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -256,7 +273,7 @@ fun TicketDetailScreen(
                         // Bérlet fallback: tulajdonos a HPT (bérletes utas) adatokból
                         owner = null
                         photoBitmap = null
-                        val po = runCatching { api.getPassOwnerData() }.getOrNull()
+                        val po = runCatching { api.getPassOwnerData(context) }.getOrNull()
                         po?.let {
                             owner = TicketOwner(it.fullName, it.birthDate, null, it.photoBase64, it.azonosito)
                             photoBitmap = decodePhoto(it.photoBase64)
@@ -312,10 +329,11 @@ fun TicketDetailScreen(
                                         if (target && serverImageBytes == null && !serverImageLoading) {
                                             serverImageLoading = true
                                             scope.launch {
-                                                val bytes = api.getServerTicketImage(purchase.id)
-                                                serverImageBytes = bytes
+                                                val result = api.getServerTicketImage(purchase.id, context)
+                                                serverImageBytes = result.bytes
+                                                serverImageError = result.error
                                                 serverImageLoading = false
-                                                if (bytes == null) useServerImage = false
+                                                if (result.bytes == null) useServerImage = false
                                             }
                                         }
                                     }
@@ -667,16 +685,34 @@ private fun OwnerAndValidityPanel(
             }
 
             if (isPass) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    IconValueRow(
-                        icon = Icons.Rounded.ConfirmationNumber,
-                        value = "Bérlet ID: ${purchase.id}",
-                        modifier = Modifier.weight(1f)
-                    )
+                // Bérletigazolvány azonosító (NevesitesAzonosito – szám, az eredeti appban is ez)
+                owner?.azonosito?.takeIf { it.isNotBlank() }?.let { azon ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        IconValueRow(
+                            icon = Icons.Rounded.ConfirmationNumber,
+                            value = "Bérletigazolvány azonosító: $azon",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            } else {
+                // Jegy sorszám (numerikus, 1-gyel kezdődik)
+                details.ticketData?.jegySorszam?.takeIf { it.isNotBlank() }?.let { sorsz ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        IconValueRow(
+                            icon = Icons.Rounded.ConfirmationNumber,
+                            value = "Azonosító: $sorsz",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
 

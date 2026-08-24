@@ -58,42 +58,57 @@ object TicketDecoder {
         var photoBase64: String? = null
         var azonosito: String? = null
 
+        // Egy JSON-objektumon belül párosítjuk a mezőket – így a névhez a ROSSZ,
+        // máshol található dátum/azonosító nem társul (korábbi hiba oka)
+        fun fromObject(obj: JsonObject) {
+            if (name == null) {
+                name = (obj["UtazoNeve"] as? JsonPrimitive)?.takeIf { !it.isStringNullBlank() }?.content
+            }
+            if (birthDate == null) {
+                birthDate = (obj["SzuletesiDatum"] as? JsonPrimitive)?.takeIf { !it.isStringNullBlank() }?.content
+            }
+            if (azonosito == null) {
+                azonosito = ((obj["NevesitesAzonosito"] as? JsonPrimitive)?.takeIf { !it.isStringNullBlank() }?.content)
+                    ?: (obj["berletIgazolvanyazonosito"] as? JsonPrimitive)?.takeIf { !it.isStringNullBlank() }?.content
+            }
+            if (photoBase64 == null) {
+                val bin = obj["BinarisAllomany"] as? JsonObject
+                photoBase64 = (bin?.get("\$value") as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+            }
+        }
+
         fun walk(obj: JsonObject) {
-            obj.forEach { (key, v) ->
-                when {
-                    key == "UtazoNeve" && v is JsonPrimitive && !v.isStringNullBlank() && name == null ->
-                        name = v.content
-
-                    key == "SzuletesiDatum" && v is JsonPrimitive && !v.isStringNullBlank() && birthDate == null ->
-                        birthDate = v.content
-
-                    key == "Kod" && v is JsonPrimitive && !v.isStringNullBlank() &&
-                        v.content.startsWith("HU_") && passengerType == null ->
-                        passengerType = v.content
-
-                    key.equals("NevesitesAzonosito", true) && v is JsonPrimitive && !v.isStringNullBlank() && azonosito == null ->
-                        azonosito = v.content
-
-                    key.equals("berletIgazolvanyazonosito", true) && v is JsonPrimitive && !v.isStringNullBlank() && azonosito == null ->
-                        azonosito = v.content
-
-                    key == "BinarisAllomany" && v is JsonObject && photoBase64 == null -> {
-                        val raw = (v["\$value"] as? JsonPrimitive)?.content
-                        if (!raw.isNullOrBlank()) photoBase64 = raw
-                    }
-                }
+            fromObject(obj)
+            obj.forEach { (_, v) ->
+                if (name != null && birthDate != null && azonosito != null && photoBase64 != null) return
                 when (v) {
                     is JsonObject -> walk(v)
                     is kotlinx.serialization.json.JsonArray ->
-                        v.forEach { e ->
-                            if (e is JsonObject) walk(e)
-                        }
+                        v.forEach { if (it is JsonObject) walk(it) }
                     else -> {}
                 }
             }
         }
 
         walk(rawJson)
+
+        // Utastípus kód (HU_...) külön – csak kijelzéshez, sosem azonosítóhoz
+        fun findKodTyped(obj: JsonObject): String? {
+            obj.forEach { (key, v) ->
+                if (key == "Kod" && v is JsonPrimitive && !v.isStringNullBlank() && v.content.startsWith("HU_")) {
+                    return v.content
+                }
+                when (v) {
+                    is JsonObject -> findKodTyped(v)?.let { return it }
+                    is kotlinx.serialization.json.JsonArray ->
+                        v.forEach { if (it is JsonObject) findKodTyped(it)?.let { k -> return k } }
+                    else -> {}
+                }
+            }
+            return null
+        }
+        passengerType = findKodTyped(rawJson)
+
         return if (name == null && birthDate == null && passengerType == null && photoBase64 == null && azonosito == null) null
         else TicketOwner(name, birthDate, passengerType, photoBase64, azonosito)
     }

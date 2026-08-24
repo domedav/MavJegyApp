@@ -231,6 +231,18 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
     val valid = purchases.filter { it.status.trim().equals("Ervenyes", ignoreCase = true) }
 
     Scaffold(
+        snackbarHost = {
+            // Saját, eltűntethető snackbar: swipe balra/jobbra vagy lehúzás
+            Box(modifier = Modifier.fillMaxWidth()) {
+                error?.let { err ->
+                    com.domedav.mavjegy.ui.components.DismissibleSnackbar(
+                        message = "Hiba: $err",
+                        onDismiss = { error = null },
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+            }
+        },
         topBar = {
             Row(
                 modifier = Modifier
@@ -259,14 +271,6 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
             androidx.compose.animation.AnimatedVisibility(loading) {
                 androidx.compose.material3.LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth()
-                )
-            }
-            error?.let {
-                Text(
-                    text = "Hiba: $it",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                 )
             }
             LazyColumn(
@@ -320,7 +324,7 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
                 modifier = Modifier
                     .size(48.dp)
                     .background(
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (isPass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
@@ -331,7 +335,7 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
                     else
                         Icons.Rounded.Train,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
+                    tint = if (isPass) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary,
                     modifier = Modifier.size(26.dp)
                 )
             }
@@ -357,7 +361,7 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
             }
             Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary
+                color = if (isPass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
             ) {
                 Text(
                     text = if (purchase.currency == "HUF")
@@ -366,7 +370,7 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
                         "%.0f %s".format(purchase.amount, purchase.currency),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = if (isPass) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }

@@ -62,6 +62,27 @@ class TokenStore(private val context: Context) {
         prefs.edit().putString(KEY_UAID, id).apply()
     }
 
+    // --- Demo mód (Demo / Demo belépés) ---
+    fun isDemo(): Boolean = prefs.getBoolean(KEY_DEMO, false)
+
+    fun setDemo(demo: Boolean) {
+        prefs.edit().putBoolean(KEY_DEMO, demo).apply()
+    }
+
+    // --- VIM (MobileServiceS) session – GetJegykep-hoz ---
+    fun getVimToken(): String? = prefs.getString(KEY_VIM_TOKEN, null)
+
+    fun setVimToken(token: String) {
+        prefs.edit().putString(KEY_VIM_TOKEN, token).apply()
+    }
+
+    /** VIM token lejárata, epoch millis; 0 = ismeretlen */
+    fun getVimTokenExpiry(): Long = prefs.getLong(KEY_VIM_EXPIRY, 0L)
+
+    fun setVimTokenExpiry(expiryMillis: Long) {
+        prefs.edit().putLong(KEY_VIM_EXPIRY, expiryMillis).apply()
+    }
+
     fun hasToken(): Boolean = !getToken().isNullOrBlank()
 
     fun hasCredentials(): Boolean =
@@ -77,5 +98,8 @@ class TokenStore(private val context: Context) {
         const val KEY_PASSWORD = "password"
         const val KEY_USER_ID = "felhasznaloAzonosito"
         const val KEY_UAID = "uaid"
+        const val KEY_DEMO = "demoMode"
+        const val KEY_VIM_TOKEN = "vimToken"
+        const val KEY_VIM_EXPIRY = "vimTokenExpiry"
     }
 }

@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
                 }
                 if (loggedIn) {
                     LaunchedEffect(Unit) {
+                        if (tokenStore.isDemo()) return@LaunchedEffect
                         val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             runCatching { api.ensureSession() }.getOrElse { false }
                         }
@@ -169,23 +170,21 @@ fun AppRoot(api: MavApi) {
             )
         }
 
-        // Húzási progress (0..1) alapján interpolált színek: húzásra PRIMARY-ba megy át
+        // Switch-szerű lerp: rögzített állapotban PRIMARY, húzás közben a két pont
+        // között átmegy az unselected színbe, majd vissza – mint egy kapcsoló gomb
         val dragProgress = (dragOffset.value / itemSizePx).coerceIn(0f, 1f)
+        val midDistance = (1f - kotlin.math.abs(dragProgress - 0.5f) * 2f).coerceIn(0f, 1f)
         val circleColor = lerp(
-            MaterialTheme.colorScheme.surfaceContainerHigh,
             MaterialTheme.colorScheme.primary,
-            dragProgress
+            MaterialTheme.colorScheme.surfaceContainerHigh,
+            midDistance
         )
         val onCircleColor = lerp(
-            MaterialTheme.colorScheme.onSurfaceVariant,
             MaterialTheme.colorScheme.onPrimary,
-            dragProgress
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            midDistance
         )
-        val pillColor = lerp(
-            MaterialTheme.colorScheme.surfaceContainerHighest,
-            MaterialTheme.colorScheme.surfaceContainer,
-            dragProgress
-        )
+        val pillColor = MaterialTheme.colorScheme.surfaceContainerHighest
 
         Surface(
             modifier = Modifier
