@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -153,16 +154,17 @@ fun TicketDetailScreen(
             val zoneHorizontalInset = screenW * 0.25f
             val zoneInnerW = screenW - zoneHorizontalInset * 2f
             val zoneH = screenH
-            val displaySize = minOf(zoneInnerW, zoneH)
+            val baseSize = minOf(zoneInnerW, zoneH)
+            val displaySize = baseSize * 0.70f   // 30% kisebb, hogy a scanner beolvassa
 
-            // Pan rules: down 60% / up 30% of displaySize
-            val maxPanYUp = 0.30f * displaySize
-            val maxPanYDown = 0.60f * displaySize
+            // Pan rules: szimmetrikus fel/le
+            val maxPanYUp = 0.60f * baseSize
+            val maxPanYDown = 0.60f * baseSize
 
             fun clampOffsetY(y: Float): Float = y.coerceIn(-maxPanYUp, maxPanYDown)
 
             // Default: glyph center lands at upper fifth of the screen (top-anchored)
-            val topAnchoredOffsetY = (-(screenH * 0.30f)).coerceIn(-maxPanYUp, maxPanYDown)
+            val topAnchoredOffsetY = (-(screenH * 0.30f)).coerceIn(-maxPanYUp * 0.45f, maxPanYDown)
             if (offsetY == null) offsetY = topAnchoredOffsetY
 
             LaunchedEffect(serialized, barcodeTargetPx, fetchTrigger, expired) {
@@ -252,17 +254,23 @@ fun TicketDetailScreen(
                             contentAlignment = Alignment.TopCenter
                         ) {
                             Surface(
-                                modifier = Modifier.padding(top = with(density) { screenH.toDp() } * 0.18f),
+                                modifier = Modifier
+                                    .padding(top = with(density) { screenH.toDp() } * 0.10f)
+                                    .size(with(density) { displaySize.toDp() }),
                                 shape = RoundedCornerShape(40.dp),
                                 color = MaterialTheme.colorScheme.errorContainer
                             ) {
-                                Text(
-                                    text = "Lejárt",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 20.dp)
-                                )
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Lejárt",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
                             }
                         }
                     }
@@ -380,7 +388,7 @@ private fun InfoAndValidityCard(
                 icon = Icons.Rounded.Sell,
                 value = buildString {
                     append("%.0f".format(Locale.US, purchase.amount))
-                    if (purchase.currency.isNotBlank()) append(" ${purchase.currency}")
+                    if (purchase.currency.isNotBlank()) append(if (purchase.currency == "HUF") " Ft" else " ${purchase.currency}")
                 }
             )
 
@@ -454,7 +462,7 @@ private fun validityText(purchase: Purchase): String? {
     val now = LocalDateTime.now()
     return if (!to.isBefore(now)) {
         val days = ChronoUnit.DAYS.between(now.toLocalDate(), to.toLocalDate().plusDays(1)).coerceAtLeast(0)
-        "még $days nap érvényes"
+        "Még $days napig érvényes"
     } else {
         val from = parseDate(purchase.validFrom) ?: return null
         val f = DateTimeFormatter.ofPattern("yyyy.MM.dd.", Locale("hu"))

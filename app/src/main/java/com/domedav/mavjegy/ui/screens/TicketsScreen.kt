@@ -293,13 +293,6 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                     maxLines = 1
                 )
-                if (!isPass) {
-                    Text(
-                        "${purchase.startStation} → ${purchase.endStation ?: ""}",
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1
-                    )
-                }
                 if (purchase.validFrom != null || purchase.validTo != null) {
                     Text(
                         "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
@@ -314,7 +307,7 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
             ) {
                 Text(
                     text = if (purchase.currency == "HUF")
-                        "%.0f HUF".format(purchase.amount)
+                        "%.0f Ft".format(purchase.amount)
                     else
                         "%.0f %s".format(purchase.amount, purchase.currency),
                     style = MaterialTheme.typography.titleSmall,

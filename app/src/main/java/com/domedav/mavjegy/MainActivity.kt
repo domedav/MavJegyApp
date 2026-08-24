@@ -11,11 +11,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ConfirmationNumber
 import androidx.compose.material.icons.rounded.ShoppingCart
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -25,8 +28,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import kotlin.math.roundToInt
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -112,42 +122,78 @@ fun AppRoot(api: MavApi) {
             }
         }
 
-        // M3 Expressive floating toolbar - bottom-center pill overlay
+        // M3 Expressive floating toolbar - jobboldali vertikális pill, húzható selection karika
+        val itemSizePx = with(LocalDensity.current) { 58.dp.toPx() }
+        val dragOffset = remember { Animatable(0f) } // -1..1 skálán a kettő ikon közt
+        val scope = rememberCoroutineScope()
+
+        LaunchedEffect(selectedTab) {
+            dragOffset.animateTo(
+                if (selectedTab == 0) 0f else itemSizePx,
+                spring(dampingRatio = Spring.DampingRatioLowBouncy)
+            )
+        }
+
         Surface(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
+                .align(Alignment.CenterEnd)
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(bottom = 24.dp)
+                .padding(end = 12.dp)
                 .shadow(6.dp, CircleShape),
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             tonalElevation = 3.dp
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            Box(
+                modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp)
             ) {
-                listOf(
-                    Icons.Rounded.ConfirmationNumber to "Jegyek",
-                    Icons.Rounded.ShoppingCart to "Vásárlás"
-                ).forEachIndexed { index, (icon, label) ->
-                    val selected = selectedTab == index
-                    Icon(
-                        icon,
-                        contentDescription = label,
-                        tint = if (selected) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
+                // húzható selection karika (draw over, iPhone-szerű)
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(0, dragOffset.value.roundToInt()) }
+                        .size(58.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+                Column(
+                    modifier = Modifier.pointerInput(itemSizePx) {
+                        detectDragGestures(
+                            onDragStart = { },
+                            onDragEnd = {
+                                // snap: amelyik ikonhoz közelebb ért
+                                val target = if (dragOffset.value > itemSizePx / 2f) 1 else 0
+                                selectedTab = target
+                            }
+                        ) { change, dragAmount ->
+                            change.consume()
+                            val new = (dragOffset.value + dragAmount.y)
+                                .coerceIn(0f, itemSizePx)
+                            scope.launch { dragOffset.snapTo(new) }
+                        }
+                    }
+                ) {
+                    listOf(
+                        Icons.Rounded.ConfirmationNumber to "Jegyek",
+                        Icons.Rounded.ShoppingCart to "Vásárlás"
+                    ).forEachIndexed { index, (icon, label) ->
+                        val selected = selectedTab == index
+                        Box(
+                            modifier = Modifier
+                                .size(58.dp)
+                                .clip(CircleShape)
+                                .clickable { selectedTab = index },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                icon,
+                                contentDescription = label,
+                                tint = if (selected) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(26.dp)
                             )
-                            .clickable { selectedTab = index }
-                            .padding(16.dp)
-                            .size(26.dp)
-                    )
+                        }
+                    }
                 }
             }
         }
