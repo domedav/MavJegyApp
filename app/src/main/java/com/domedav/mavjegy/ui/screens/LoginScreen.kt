@@ -38,7 +38,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -210,30 +209,6 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
             .navigationBarsPadding()
             .imePadding()
     ) {
-        if (step == 1) {
-            StaggeredAppear(index = 0) {
-                Surface(
-                    shape = CookieShape,
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(16.dp)
-                ) {
-                    IconButton(onClick = {
-                        focusManager.clearFocus()
-                        error = null
-                        step = 0
-                    }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Vissza"
-                        )
-                    }
-                }
-            }
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -379,15 +354,21 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                 )
                             }
                             Spacer(modifier = Modifier.height(12.dp))
+                            // Vissza gomb középen, könnyen elérhető helyen – mint a regisztrációnál
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
                                     shape = CookieShape,
                                     color = MaterialTheme.colorScheme.tertiaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.clickable {
+                                        focusManager.clearFocus()
+                                        error = null
+                                        step = 0
+                                    }
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Lock,
-                                        contentDescription = null,
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = "Vissza a bejelentkezéshez",
                                         modifier = Modifier.padding(10.dp)
                                     )
                                 }

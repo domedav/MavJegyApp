@@ -31,7 +31,6 @@ import androidx.compose.material.icons.rounded.ConfirmationNumber
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -73,6 +72,7 @@ import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
 import com.domedav.mavjegy.data.TicketCache
 import com.domedav.mavjegy.data.TicketDetails
+import com.domedav.mavjegy.data.isPassTicket
 import com.domedav.mavjegy.util.BarcodeGenerator
 import com.domedav.mavjegy.util.PassOwnerPrefs
 import com.domedav.mavjegy.util.TicketDecoder
@@ -130,7 +130,7 @@ fun TicketDetailScreen(
     var photoBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
 
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val isPass = purchase.startStation == null
+    val isPass = purchase.isPassTicket()
 
     // Vonalkód mód: false = lokális Aztec, true = szerver-oldali jegykép (GetJegykep, mint az eredeti appban)
     var useServerImage by remember { mutableStateOf(false) }
@@ -223,6 +223,7 @@ fun TicketDetailScreen(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
                 .zIndex(2f)
         )
         Column(
@@ -682,53 +683,6 @@ private fun OwnerAndValidityPanel(
                         modifier = Modifier.weight(1f)
                     )
                 }
-            }
-
-            if (isPass) {
-                // Bérletigazolvány azonosító (NevesitesAzonosito – szám, az eredeti appban is ez)
-                owner?.azonosito?.takeIf { it.isNotBlank() }?.let { azon ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        IconValueRow(
-                            icon = Icons.Rounded.ConfirmationNumber,
-                            value = "Bérletigazolvány azonosító: $azon",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            } else {
-                // Jegy sorszám (numerikus, 1-gyel kezdődik)
-                details.ticketData?.jegySorszam?.takeIf { it.isNotBlank() }?.let { sorsz ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        IconValueRow(
-                            icon = Icons.Rounded.ConfirmationNumber,
-                            value = "Azonosító: $sorsz",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                IconValueRow(
-                    icon = Icons.Rounded.Sell,
-                    value = buildString {
-                        append("%.0f".format(Locale.US, purchase.amount))
-                        if (purchase.currency.isNotBlank()) append(if (purchase.currency == "HUF") " Ft" else " ${purchase.currency}")
-                    },
-                    modifier = Modifier.weight(1f)
-                )
             }
 
             // Érvényességi intervallum + hátralévő napok badge

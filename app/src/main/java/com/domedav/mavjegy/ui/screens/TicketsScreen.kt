@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
+import com.domedav.mavjegy.data.isPassTicket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -296,7 +297,7 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
 @Composable
 private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
     val isValid = purchase.status.trim().equals("Ervenyes", ignoreCase = true)
-    val isPass = purchase.startStation == null
+    val isPass = purchase.isPassTicket()
     Card(
         shape = if (isValid) RoundedCornerShape(28.dp) else RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -350,7 +351,8 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
                         maxLines = 1
                     )
                 }
-                if (purchase.validFrom != null || purchase.validTo != null) {
+                // Bérletnél intervallum; jegynél csak egy dátum (lentebb, ikonnal) – nincs duplikáció
+                if (isPass && (purchase.validFrom != null || purchase.validTo != null)) {
                     Text(
                         "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
                         style = MaterialTheme.typography.bodySmall,

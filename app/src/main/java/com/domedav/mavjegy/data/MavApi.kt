@@ -28,6 +28,13 @@ data class Purchase(
     val name: String? = null
 )
 
+/**
+ * Bérlet-detektálás: nincs vonaladat (startStation null) VAGY a név bérletre utal
+ * (pl. Országbérlet, Diákbérlet, Budapest–Szeged bérlet).
+ */
+fun Purchase.isPassTicket(): Boolean =
+    startStation == null || name?.contains("bérlet", ignoreCase = true) == true
+
 data class TicketData(
     val serializedTicketData: String?,
     val jegySorszam: String?

@@ -31,7 +31,6 @@ import androidx.compose.ui.draw.clip
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.rememberCoroutineScope
@@ -136,6 +135,10 @@ fun AppRoot(api: MavApi) {
 
     if (detailPurchase != null) {
         val purchase = detailPurchase!!
+        // System back: visszatér a jegylistába, nem lép ki az appból
+        androidx.activity.compose.BackHandler {
+            detailPurchase = null
+        }
         TicketDetailScreen(
             api = api,
             purchase = purchase,
@@ -170,20 +173,11 @@ fun AppRoot(api: MavApi) {
             )
         }
 
-        // Switch-szerű lerp: rögzített állapotban PRIMARY, húzás közben a két pont
-        // között átmegy az unselected színbe, majd vissza – mint egy kapcsoló gomb
-        val dragProgress = (dragOffset.value / itemSizePx).coerceIn(0f, 1f)
-        val midDistance = (1f - kotlin.math.abs(dragProgress - 0.5f) * 2f).coerceIn(0f, 1f)
-        val circleColor = lerp(
-            MaterialTheme.colorScheme.primary,
-            MaterialTheme.colorScheme.surfaceContainerHigh,
-            midDistance
-        )
-        val onCircleColor = lerp(
-            MaterialTheme.colorScheme.onPrimary,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            midDistance
-        )
+        // A selection karika MINDIG primary és MINDIG a kiválasztott elem alatt van:
+        // csak a pozíciója csúszik (spring), a színek soha nem cserélnek át –
+        // a kiválasztott ikon onPrimary, a másik onSurfaceVariant
+        val circleColor = MaterialTheme.colorScheme.primary
+        val onCircleColor = MaterialTheme.colorScheme.onPrimary
         val pillColor = MaterialTheme.colorScheme.surfaceContainerHighest
 
         Surface(
