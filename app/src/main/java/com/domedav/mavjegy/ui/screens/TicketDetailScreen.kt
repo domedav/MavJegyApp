@@ -1,21 +1,26 @@
 package com.domedav.mavjegy.ui.screens
 
+import android.app.Activity
+import android.view.WindowManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,17 +29,14 @@ import androidx.compose.material.icons.rounded.ConfirmationNumber
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,8 +44,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -66,7 +69,6 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TicketDetailScreen(
     api: MavApi,
@@ -75,6 +77,22 @@ fun TicketDetailScreen(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
+
+    // Max brightness + keep-screen-on while this screen is visible
+    DisposableEffect(Unit) {
+        val activity = context as? Activity
+        val old = activity?.window?.attributes?.screenBrightness
+        if (activity != null) {
+            activity.window.attributes = activity.window.attributes.apply { screenBrightness = 1f }
+            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            if (activity != null) {
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                activity.window.attributes = activity.window.attributes.apply { screenBrightness = old ?: -1f }
+            }
+        }
+    }
 
     var details by remember { mutableStateOf<TicketDetails?>(null) }
     var loadingDetails by remember { mutableStateOf(true) }
@@ -87,7 +105,9 @@ fun TicketDetailScreen(
 
     var scale by remember { mutableStateOf(1f) }
     var offsetX by remember { mutableStateOf(0f) }
-    var offsetY by remember { mutableStateOf(0f) }
+    var offsetY by remember { mutableStateOf<Float?>(null) }
+
+    val expired = isPurchaseExpired(purchase)
 
     LaunchedEffect(purchase.id, fetchTrigger) {
         loadingDetails = true
@@ -114,29 +134,14 @@ fun TicketDetailScreen(
 
     val serialized = details?.ticketData?.serializedTicketData
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(titleFor(details, purchase)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Vissza")
-                    }
-                },
-                actions = {
-                    if (errorMessage != null) {
-                        IconButton(onClick = { fetchTrigger++ }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Újrapróbálás")
-                        }
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
+    // FULL PAGE — themed page background, no floating white cards
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+    ) {
         BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+            modifier = Modifier.fillMaxSize()
         ) {
             val screenWpx = with(density) { maxWidth.toPx() }.toInt()
             val barcodeTargetPx = (screenWpx * 2).coerceAtLeast(256)
@@ -147,16 +152,25 @@ fun TicketDetailScreen(
             // Barcode zone content inset 25% from each horizontal edge (~50% screen width glyph)
             val zoneHorizontalInset = screenW * 0.25f
             val zoneInnerW = screenW - zoneHorizontalInset * 2f
-            val zoneH = (screenH - with(density) { 220.dp.toPx() })
-                .coerceAtLeast(with(density) { 120.dp.toPx() })
+            val zoneH = screenH
             val displaySize = minOf(zoneInnerW, zoneH)
 
-            LaunchedEffect(serialized, barcodeTargetPx, fetchTrigger) {
-                generatingBarcode = true
-                if (serialized.isNullOrBlank()) {
+            // Pan rules: down 60% / up 30% of displaySize
+            val maxPanYUp = 0.30f * displaySize
+            val maxPanYDown = 0.60f * displaySize
+
+            fun clampOffsetY(y: Float): Float = y.coerceIn(-maxPanYUp, maxPanYDown)
+
+            // Default: glyph center lands at upper fifth of the screen (top-anchored)
+            val topAnchoredOffsetY = (-(screenH * 0.30f)).coerceIn(-maxPanYUp, maxPanYDown)
+            if (offsetY == null) offsetY = topAnchoredOffsetY
+
+            LaunchedEffect(serialized, barcodeTargetPx, fetchTrigger, expired) {
+                if (expired || serialized.isNullOrBlank()) {
                     generatingBarcode = false
                     return@LaunchedEffect
                 }
+                generatingBarcode = true
                 val decoded = withContext(Dispatchers.Default) {
                     runCatching { TicketDecoder.decodeSerialized(serialized) }.getOrNull()
                 }
@@ -175,31 +189,44 @@ fun TicketDetailScreen(
                 generatingBarcode = false
             }
 
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (loadingDetails && details == null && errorMessage == null) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+            // GESTURE / CONTENT ZONE — code floats directly on the page surface,
+            // no popup container, gestures cover the whole middle area
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                scale = 1f
+                                offsetX = 0f
+                                offsetY = topAnchoredOffsetY
+                            }
                         )
                     }
-                    return@Column
-                }
-
-                if (errorMessage != null && !hasCached && details == null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(28.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
+                    .pointerInput(displaySize, zoneInnerW) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scale = (scale * zoom).coerceIn(1f, 5f)
+                            val mpx =
+                                if (scale > 1f) {
+                                    ((displaySize * scale - zoneInnerW) / 2f).coerceAtLeast(0f)
+                                } else 0f
+                            offsetX = if (scale > 1f) {
+                                (offsetX + pan.x).coerceIn(-mpx, mpx)
+                            } else 0f
+                            offsetY = clampOffsetY((offsetY ?: 0f) + pan.y)
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                when {
+                    loadingDetails && details == null && errorMessage == null -> {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                         )
-                    ) {
+                    }
+
+                    errorMessage != null && !hasCached && details == null -> {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -210,7 +237,7 @@ fun TicketDetailScreen(
                             Text(
                                 text = errorMessage ?: "Ismeretlen hiba",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
                             )
                             Button(onClick = { fetchTrigger++ }) {
@@ -218,109 +245,130 @@ fun TicketDetailScreen(
                             }
                         }
                     }
-                    return@Column
-                }
 
-                details?.let { d ->
-                    val h = displaySize * scale
-                    val maxPanX =
-                        if (scale > 1f) ((displaySize * scale - zoneInnerW) / 2f).coerceAtLeast(0f) else 0f
-                    val maxPanYUp = (0.10f * h).coerceAtLeast(0.10f * displaySize)
-                    val maxPanYDown = (0.60f * h).coerceAtLeast(0.60f * displaySize)
-
-                    fun clampOffsetY(y: Float): Float = y.coerceIn(-maxPanYUp, maxPanYDown)
-
-                    // BARCODE ZONE (top, weight(1f))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .clip(RoundedCornerShape(40.dp))
-                            .background(MaterialTheme.colorScheme.inverseSurface)
-                            .pointerInput(Unit) {
-                                detectTapGestures(
-                                    onDoubleTap = {
-                                        scale = 1f
-                                        offsetX = 0f
-                                        offsetY = 0f
-                                    }
-                                )
-                            }
-                            .pointerInput(displaySize, zoneInnerW) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    scale = (scale * zoom).coerceIn(1f, 5f)
-                                    val mpx =
-                                        if (scale > 1f) {
-                                            ((displaySize * scale - zoneInnerW) / 2f).coerceAtLeast(0f)
-                                        } else 0f
-                                    offsetX = if (scale > 1f) {
-                                        (offsetX + pan.x).coerceIn(-mpx, mpx)
-                                    } else 0f
-                                    offsetY = clampOffsetY(offsetY + pan.y)
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
+                    expired -> {
                         Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = with(density) { zoneHorizontalInset.toDp() }),
-                            contentAlignment = Alignment.Center
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.TopCenter
                         ) {
-                            val bitmap = barcodeBitmap
-                            when {
-                                bitmap != null -> Image(
-                                    bitmap = bitmap,
-                                    contentDescription = "Vonalkód",
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .aspectRatio(1f)
-                                        .width(with(density) { displaySize.toDp() })
-                                        .graphicsLayer {
-                                            scaleX = scale
-                                            scaleY = scale
-                                            translationX = offsetX
-                                            translationY = offsetY
-                                        }
-                                )
-
-                                generatingBarcode -> CircularProgressIndicator(
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                                )
-
-                                else -> Text(
-                                    text = "Vonalkód nem elérhető",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                            Surface(
+                                modifier = Modifier.padding(top = with(density) { screenH.toDp() } * 0.18f),
+                                shape = RoundedCornerShape(40.dp),
+                                color = MaterialTheme.colorScheme.errorContainer
+                            ) {
+                                Text(
+                                    text = "Lejárt",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 20.dp)
                                 )
                             }
                         }
                     }
 
-                    // INFO CARD (below)
-                    InfoAndValidityCard(details = d, purchase = purchase)
+                    else -> {
+                        val bitmap = barcodeBitmap
+                        when {
+                            bitmap != null -> Image(
+                                bitmap = bitmap,
+                                contentDescription = "Vonalkód",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .aspectRatio(1f)
+                                    .width(with(density) { displaySize.toDp() })
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                        translationX = offsetX
+                                        translationY = offsetY ?: 0f
+                                    }
+                            )
+
+                            generatingBarcode -> CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                            )
+
+                            else -> Text(
+                                text = "Vonalkód nem elérhető",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
+        }
+
+        // TOP ROW — back / retry "cookie" buttons over the page
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Vissza",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (errorMessage != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    IconButton(onClick = { fetchTrigger++ }) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Újrapróbálás",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // BOTTOM INFO PANEL — docked to bottom edge, full width
+        details?.let { d ->
+            InfoAndValidityCard(
+                details = d,
+                purchase = purchase,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
     }
 }
 
 @Composable
-private fun InfoAndValidityCard(details: TicketDetails, purchase: Purchase) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+private fun InfoAndValidityCard(
+    details: TicketDetails,
+    purchase: Purchase,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 2.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
+                .padding(20.dp)
+                .navigationBarsPadding()
+                .imePadding(),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             IconValueRow(
@@ -338,37 +386,44 @@ private fun InfoAndValidityCard(details: TicketDetails, purchase: Purchase) {
 
             val validityText = validityText(purchase)
             if (validityText != null) {
-                IconValueRow(icon = Icons.Rounded.Schedule, value = validityText)
+                IconValueRow(
+                    icon = Icons.Rounded.Schedule,
+                    value = validityText,
+                    iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onTertiaryContainer
+                )
             }
         }
     }
 }
 
 @Composable
-private fun IconValueRow(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String) {
+private fun IconValueRow(
+    icon: ImageVector,
+    value: String,
+    iconContainerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    iconTint: Color = MaterialTheme.colorScheme.onPrimaryContainer
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Box(
             modifier = Modifier
-                .background(
-                    MaterialTheme.colorScheme.primary,
-                    RoundedCornerShape(12.dp)
-                )
+                .background(iconContainerColor, RoundedCornerShape(12.dp))
                 .padding(8.dp)
         ) {
             Icon(
                 icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
+                tint = iconTint,
                 modifier = Modifier.height(20.dp).width(20.dp)
             )
         }
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
 }
@@ -387,6 +442,11 @@ private fun parseDate(iso: String?): LocalDateTime? {
     return try {
         LocalDate.parse(iso).atStartOfDay()
     } catch (_: Exception) { null }
+}
+
+private fun isPurchaseExpired(purchase: Purchase): Boolean {
+    val to = parseDate(purchase.validTo) ?: return false
+    return to.isBefore(LocalDateTime.now())
 }
 
 private fun validityText(purchase: Purchase): String? {

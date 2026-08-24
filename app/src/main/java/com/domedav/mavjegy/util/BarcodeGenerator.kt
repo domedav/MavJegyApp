@@ -24,16 +24,28 @@ object BarcodeGenerator {
         )
         val w = matrix.width
         val h = matrix.height
+        // atlatszo hatter: csak a kod korul keskeny feher padding
+        val q = (minOf(w, h) * 0.06f).toInt().coerceAtLeast(16)
+        val bitmap = Bitmap.createBitmap(w + 2 * q, h + 2 * q, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.TRANSPARENT)
+        val padPx = q / 2
+        // feher "papir" sav a kod mogott (kerekített)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint().apply {
+            color = Color.WHITE
+            isAntiAlias = true
+        }
+        canvas.drawRoundRect(
+            (q - padPx).toFloat(), (q - padPx).toFloat(),
+            (w + q + padPx).toFloat(), (h + q + padPx).toFloat(),
+            padPx.toFloat(), padPx.toFloat(), paint
+        )
         val pixels = IntArray(w * h)
         for (y in 0 until h) {
             for (x in 0 until w) {
                 pixels[y * w + x] = if (matrix[x, y]) Color.BLACK else Color.WHITE
             }
         }
-        // extra quiet zone a kod korul (feher padding)
-        val q = (minOf(w, h) * 0.10f).toInt().coerceAtLeast(24)
-        val bitmap = Bitmap.createBitmap(w + 2 * q, h + 2 * q, Bitmap.Config.RGB_565)
-        bitmap.eraseColor(Color.WHITE)
         bitmap.setPixels(pixels, 0, w, q, q, w, h)
         return bitmap.asImageBitmap()
     }
