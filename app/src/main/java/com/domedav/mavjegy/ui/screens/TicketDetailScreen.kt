@@ -1,26 +1,26 @@
 package com.domedav.mavjegy.ui.screens
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBackIosNew
-import androidx.compose.material.icons.rounded.ConfirmationNumber
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +30,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,173 +39,264 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
+import com.domedav.mavjegy.data.TicketCache
+import com.domedav.mavjegy.data.TicketDetails
 import com.domedav.mavjegy.util.BarcodeGenerator
 import com.domedav.mavjegy.util.TicketDecoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TicketDetailScreen(api: MavApi, purchase: Purchase, onBack: () -> Unit) {
-    BackHandler(onBack = onBack)
+fun TicketDetailScreen(
+    api: MavApi,
+    purchase: Purchase,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
 
-    var ticketData by remember { mutableStateOf<com.domedav.mavjegy.data.TicketData?>(null) }
+    var details by remember { mutableStateOf<TicketDetails?>(null) }
+    var loadingDetails by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var hasCached by remember { mutableStateOf(false) }
+    var fetchTrigger by remember { mutableStateOf(0) }
+
     var barcodeType by remember { mutableStateOf(BarcodeGenerator.Type.AZTEC) }
-    var barcode by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var barcodeBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var generatingBarcode by remember { mutableStateOf(true) }
 
-    LaunchedEffect(purchase.id) {
-        try {
-            val details = api.getTicketDetails(purchase.id)
-            ticketData = details.ticketData
-        } catch (_: Exception) {
-            ticketData = null
+    var scale by remember { mutableStateOf(1f) }
+    var offsetX by remember { mutableStateOf(0f) }
+    var offsetY by remember { mutableStateOf(0f) }
+
+    LaunchedEffect(purchase.id, fetchTrigger) {
+        loadingDetails = true
+        errorMessage = null
+        val cached = withContext(Dispatchers.IO) {
+            runCatching { TicketCache.load(context, purchase.id) }.getOrNull()
         }
-    }
-
-    LaunchedEffect(ticketData?.serializedTicketData, barcodeType) {
-        val serialized = ticketData?.serializedTicketData ?: return@LaunchedEffect
+        if (cached != null) {
+            hasCached = true
+            details = cached
+        }
         try {
-            val decoded = TicketDecoder.decodeSerialized(serialized)
-            val content = decoded?.barcodeContent
-            barcode = content?.let {
-                BarcodeGenerator.generate(it, barcodeType, 800, 800)
+            val fetched = api.getTicketDetails(purchase.id)
+            details = fetched
+            withContext(Dispatchers.IO) {
+                runCatching { TicketCache.save(context, purchase.id, fetched) }
             }
-        } catch (_: Exception) {
-            barcode = null
+            errorMessage = null
+        } catch (e: Exception) {
+            if (!hasCached) errorMessage = e.message ?: e.javaClass.simpleName
         }
+        loadingDetails = false
     }
+
+    val serialized = details?.ticketData?.serializedTicketData
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-    ) { padding ->
-        Column(
+        topBar = {
+            TopAppBar(
+                title = { Text(titleFor(details, purchase)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Vissza")
+                    }
+                },
+                actions = {
+                    if (errorMessage != null) {
+                        IconButton(onClick = { fetchTrigger++ }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Újrapróbálás")
+                        }
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(innerPadding)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Rounded.ArrowBackIosNew, contentDescription = "Vissza")
+            val screenWpx = with(density) { maxWidth.toPx() }.toInt()
+            val barcodeTargetPx = (screenWpx * 2).coerceAtLeast(256)
+            val containerW = constraints.maxWidth.toFloat()
+            val containerH = constraints.maxHeight.toFloat()
+            val horizontalPaddingPx = with(density) { 16.dp.toPx() }
+            val barcodeContainerW = containerW - horizontalPaddingPx * 2f
+            val barcodeContainerH = (containerH - with(density) { 220.dp.toPx() })
+                .coerceAtLeast(with(density) { 120.dp.toPx() })
+            val displaySize = minOf(barcodeContainerW, barcodeContainerH) * 0.9f
+
+            LaunchedEffect(serialized, barcodeType, barcodeTargetPx, fetchTrigger) {
+                generatingBarcode = true
+                if (serialized.isNullOrBlank()) {
+                    generatingBarcode = false
+                    return@LaunchedEffect
                 }
-                Text(
-                    "Jegy részletei",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                val decoded = withContext(Dispatchers.Default) {
+                    runCatching { TicketDecoder.decodeSerialized(serialized) }.getOrNull()
+                }
+                val content = decoded?.barcodeContent
+                if (content.isNullOrBlank()) {
+                    generatingBarcode = false
+                    return@LaunchedEffect
+                }
+                barcodeBitmap = withContext(Dispatchers.Default) {
+                    try {
+                        BarcodeGenerator.generate(content, barcodeType, barcodeTargetPx, barcodeTargetPx)
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                generatingBarcode = false
             }
 
-            Card(
-                shape = MaterialTheme.shapes.extraLarge,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                ),
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                if (loadingDetails && details == null && errorMessage == null) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                .padding(10.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.ConfirmationNumber,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                        Text(
-                            text = if (purchase.startStation == null) "Bérlet" else "Jegy",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
                     }
-                    InfoRow("Érvényesség kezdete", formatDate(purchase.validFrom))
-                    InfoRow("Érvényesség vége", formatDate(purchase.validTo))
-                    ticketData?.jegySorszam?.let { InfoRow("Jegysorszám", it) }
-                    Text(
-                        text = "%.0f %s".format(purchase.amount, purchase.currency),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    return@Column
                 }
-            }
 
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = barcodeType == BarcodeGenerator.Type.AZTEC,
-                    onClick = { barcodeType = BarcodeGenerator.Type.AZTEC },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                ) { Text("Aztec") }
-                SegmentedButton(
-                    selected = barcodeType == BarcodeGenerator.Type.CODE128,
-                    onClick = { barcodeType = BarcodeGenerator.Type.CODE128 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                ) { Text("Code128") }
-            }
-
-            val bmp = barcode
-            if (bmp != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .animateContentSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // render at ~60% of the generated bitmap's natural size so it can be
-                    // scrolled under an external reader device
-                    val density = LocalDensity.current
-                    val width = with(density) { bmp.width.toDp() } * 0.6f
-                    Image(
-                        bitmap = bmp,
-                        contentDescription = "Vonalkód",
-                        modifier = Modifier
-                            .width(width)
-                            .aspectRatio(bmp.width.toFloat() / bmp.height)
-                    )
-                }
-            } else {
-                Card(
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp).fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                if (errorMessage != null && !hasCached && details == null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
                     ) {
-                        Icon(
-                            Icons.Rounded.ConfirmationNumber,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                        Text(
-                            text = ticketData?.jegySorszam
-                                ?.let { "Vonalkód nem elérhető.\nJegysorszám: $it" }
-                                ?: "Nincs megjeleníthető vonalkód.",
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = errorMessage ?: "Ismeretlen hiba",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                textAlign = TextAlign.Center
+                            )
+                            Button(onClick = { fetchTrigger++ }) {
+                                Text("Újrapróbálás")
+                            }
+                        }
+                    }
+                    return@Column
+                }
+
+                details?.let { d ->
+                    InfoAndValidityCard(details = d, purchase = purchase)
+
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = barcodeType == BarcodeGenerator.Type.AZTEC,
+                            onClick = {
+                                if (barcodeType != BarcodeGenerator.Type.AZTEC) {
+                                    scale = 1f; offsetX = 0f; offsetY = 0f
+                                    barcodeType = BarcodeGenerator.Type.AZTEC
+                                }
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) { Text("AZTEC") }
+                        SegmentedButton(
+                            selected = barcodeType == BarcodeGenerator.Type.CODE128,
+                            onClick = {
+                                if (barcodeType != BarcodeGenerator.Type.CODE128) {
+                                    scale = 1f; offsetX = 0f; offsetY = 0f
+                                    barcodeType = BarcodeGenerator.Type.CODE128
+                                }
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) { Text("CODE128") }
+                    }
+
+                    val maxPanX = ((displaySize * scale - barcodeContainerW) / 2f).coerceAtLeast(0f)
+                    val maxPanY = ((displaySize * scale - barcodeContainerH) / 2f).coerceAtLeast(0f)
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clip(MaterialTheme.shapes.extraLarge)
+                            .background(MaterialTheme.colorScheme.inverseSurface)
+                            .pointerInput(barcodeType, displaySize, barcodeContainerW, barcodeContainerH) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    val mpx =
+                                        ((displaySize * scale - barcodeContainerW) / 2f).coerceAtLeast(0f)
+                                    val mpy =
+                                        ((displaySize * scale - barcodeContainerH) / 2f).coerceAtLeast(0f)
+                                    if (scale > 1f) {
+                                        offsetX = (offsetX + pan.x).coerceIn(-mpx, mpx)
+                                        offsetY = (offsetY + pan.y).coerceIn(-mpy, mpy)
+                                    } else {
+                                        offsetX = 0f
+                                        offsetY = 0f
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val bitmap = barcodeBitmap
+                        when {
+                            bitmap != null -> Image(
+                                bitmap = bitmap,
+                                contentDescription = "Vonalkód",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .aspectRatio(1f)
+                                    .width(with(density) { displaySize.toDp() })
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                        translationX = offsetX.coerceIn(-maxPanX, maxPanX)
+                                        translationY = offsetY.coerceIn(-maxPanY, maxPanY)
+                                    }
+                            )
+
+                            generatingBarcode -> CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                            )
+
+                            else -> Text(
+                                text = "Vonalkód nem elérhető",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -213,9 +305,130 @@ fun TicketDetailScreen(api: MavApi, purchase: Purchase, onBack: () -> Unit) {
 }
 
 @Composable
-private fun InfoRow(label: String, value: String?) {
-    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.bodySmall)
-        Text(value ?: "-", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+private fun InfoAndValidityCard(details: TicketDetails, purchase: Purchase) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = titleFor(details, purchase),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+
+            details.ticketData?.jegySorszam?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                )
+            }
+
+            val priceText = buildString {
+                append("%.0f".format(Locale.US, purchase.amount))
+                if (purchase.currency.isNotBlank()) append(" ${purchase.currency}")
+            }
+            Text(
+                text = priceText,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            ValiditySection(validFrom = purchase.validFrom, validTo = purchase.validTo)
+        }
     }
 }
+
+@Composable
+private fun ValiditySection(validFrom: String?, validTo: String?) {
+    val from = parseDate(validFrom)
+    val to = parseDate(validTo)
+    val now = LocalDateTime.now()
+    val expired = to == null || to.isBefore(now)
+
+    val formatter = DateTimeFormatter.ofPattern("yyyy. MMM d.", Locale("hu"))
+    val fallback = DateTimeFormatter.ofPattern("yyyy.MM.dd.")
+
+    fun fmt(ldt: LocalDateTime?): String =
+        ldt?.toLocalDate()?.let { d ->
+            runCatching { d.format(formatter) }.getOrElse { d.format(fallback) }
+        } ?: "–"
+
+    if (!expired && to != null) {
+        val days = ChronoUnit.DAYS.between(now.toLocalDate(), to.toLocalDate().plusDays(1)).coerceAtLeast(0)
+        Text(
+            text = "még $days nap",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Black,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "${fmt(from)} – ${fmt(to)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    } else {
+        Text(
+            text = "${fmt(from)} – ${fmt(to)}",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Black,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+private fun parseDate(raw: String?): LocalDateTime? {
+    if (raw.isNullOrBlank()) return null
+    val patterns = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss[.SSS]XXX",
+        "yyyy-MM-dd'T'HH:mm:ssXXX",
+        "yyyy-MM-dd'T'HH:mm:ss[.SSS]",
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd"
+    )
+    for (pattern in patterns) {
+        try {
+            val fmt = DateTimeFormatter.ofPattern(pattern)
+            return when {
+                pattern.endsWith("XXX") -> ZonedDateTime.parse(raw, fmt).toLocalDateTime()
+                pattern == "yyyy-MM-dd" -> LocalDate.parse(raw, fmt).atStartOfDay()
+                else -> LocalDateTime.parse(raw, fmt)
+            }
+        } catch (_: Exception) {
+        }
+    }
+    return try {
+        ZonedDateTime.parse(raw).toLocalDateTime()
+    } catch (_: Exception) {
+        try {
+            LocalDateTime.parse(raw.take(19))
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+private fun titleFor(details: TicketDetails?, purchase: Purchase): String =
+    details?.ajanlatNev?.takeIf { it.isNotBlank() }
+        ?: if (purchase.startStation == null) "Bérlet" else "Jegy"

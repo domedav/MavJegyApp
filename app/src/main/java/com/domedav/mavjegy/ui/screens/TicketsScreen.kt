@@ -199,6 +199,11 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
+            androidx.compose.animation.AnimatedVisibility(loading) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             PrimaryTabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Érvényes") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Lejárt") })

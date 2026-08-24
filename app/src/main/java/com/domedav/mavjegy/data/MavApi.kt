@@ -33,7 +33,10 @@ data class TicketData(
 )
 
 data class TicketDetails(
-    val ticketData: TicketData?
+    val ticketData: TicketData?,
+    val ajanlatNev: String? = null,
+    val ervenyessegKezdete: String? = null,
+    val ervenyessegVege: String? = null
 )
 
 class MavApi(private val tokenStore: TokenStore) {
@@ -178,13 +181,20 @@ class MavApi(private val tokenStore: TokenStore) {
             val details = root["previousPurchaseDetails"]?.jsonObject
             val tickets = details?.get("ticketDatas")?.jsonArray
             val first = tickets?.firstOrNull() as? JsonObject
+            // ajánlatnév / érvényesség a szolgáltatás-ajánlatokból
+            val offer = first?.get("szolgaltatasAjanlatok")?.let { el ->
+                (el as? kotlinx.serialization.json.JsonArray)?.firstOrNull() as? JsonObject
+            }
             TicketDetails(
                 ticketData = first?.let { o ->
                     TicketData(
                         serializedTicketData = o.str("serializedTicketData"),
                         jegySorszam = o.str("jegySorszam")
                     )
-                }
+                },
+                ajanlatNev = offer?.str("ajanlatNev"),
+                ervenyessegKezdete = offer?.str("ervenyessegKezdete"),
+                ervenyessegVege = offer?.str("ervenyessegVege")
             )
         }
     }
