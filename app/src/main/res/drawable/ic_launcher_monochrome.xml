@@ -1,17 +1,11 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="1024" android:viewportHeight="1024">
-    <!-- steam locomotive, side view, facing right: outline only -->
-    <path android:pathData="M316,292 h-64 a10,10 0 0 0 -10,10 v122 h64 v-122 a10,10 0 0 0 -10,-10z"
-        android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
-    <path android:pathData="M202,582 v-154 a46,46 0 0 1 46,-46 h306 a46,46 0 0 1 46,46 v154 z"
-        android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
-    <path android:pathData="M600,582 v-244 a26,26 0 0 1 26,-26 h170 a26,26 0 0 1 26,26 v244 z"
-        android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
-    <path android:pathData="M638,464 v-92 a18,18 0 0 1 18,-18 h60 a18,18 0 0 1 18,18 v92 z"
-        android:strokeColor="#FFFFFF" android:strokeWidth="20" android:fillColor="#00000000"/>
-    <path android:pathData="M254,664 a56,56 0 1 0 112,0 a56,56 0 1 0 -112,0z M286,664 a24,24 0 1 0 48,0 a24,24 0 1 0 -48,0z M426,664 a56,56 0 1 0 112,0 a56,56 0 1 0 -112,0z M458,664 a24,24 0 1 0 48,0 a24,24 0 1 0 -48,0z M664,664 a56,56 0 1 0 112,0 a56,56 0 1 0 -112,0z M696,664 a24,24 0 1 0 48,0 a24,24 0 1 0 -48,0z"
-        android:strokeColor="#FFFFFF" android:strokeWidth="22" android:fillColor="#00000000"/>
-    <path android:pathData="M251,749.0 h542"
-        android:strokeColor="#FFFFFF" android:strokeWidth="20" android:strokeLineCap="round" android:fillColor="#00000000"/>
+    <group android:rotation="-12" android:pivotX="512" android:pivotY="512">
+        <path android:pathData="M248,312 h528 a56,56 0 0 1 56,56 v288 a56,56 0 0 1 -56,56 h-528 a56,56 0 0 1 -56,-56 v-288 a56,56 0 0 1 56,-56 z"
+            android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
+        <path android:pathData="M330,512 h60 M450,512 h60 M570,512 h60"
+            android:strokeColor="#FFFFFF" android:strokeWidth="24"
+            android:strokeLineCap="round" android:fillColor="#00000000"/>
+    </group>
 </vector>

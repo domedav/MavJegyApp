@@ -14,11 +14,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.rounded.ConfirmationNumber
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,9 +32,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -81,7 +82,6 @@ fun TicketDetailScreen(
     var hasCached by remember { mutableStateOf(false) }
     var fetchTrigger by remember { mutableStateOf(0) }
 
-    var barcodeType by remember { mutableStateOf(BarcodeGenerator.Type.AZTEC) }
     var barcodeBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var generatingBarcode by remember { mutableStateOf(true) }
 
@@ -151,7 +151,7 @@ fun TicketDetailScreen(
                 .coerceAtLeast(with(density) { 120.dp.toPx() })
             val displaySize = minOf(zoneInnerW, zoneH)
 
-            LaunchedEffect(serialized, barcodeType, barcodeTargetPx, fetchTrigger) {
+            LaunchedEffect(serialized, barcodeTargetPx, fetchTrigger) {
                 generatingBarcode = true
                 if (serialized.isNullOrBlank()) {
                     generatingBarcode = false
@@ -167,7 +167,7 @@ fun TicketDetailScreen(
                 }
                 barcodeBitmap = withContext(Dispatchers.Default) {
                     try {
-                        BarcodeGenerator.generate(content, barcodeType, barcodeTargetPx, barcodeTargetPx)
+                        BarcodeGenerator.generate(content, BarcodeGenerator.Type.AZTEC, barcodeTargetPx, barcodeTargetPx)
                     } catch (_: Exception) {
                         null
                     }
@@ -237,7 +237,7 @@ fun TicketDetailScreen(
                             .weight(1f)
                             .clip(RoundedCornerShape(40.dp))
                             .background(MaterialTheme.colorScheme.inverseSurface)
-                            .pointerInput(barcodeType) {
+                            .pointerInput(Unit) {
                                 detectTapGestures(
                                     onDoubleTap = {
                                         scale = 1f
@@ -246,7 +246,7 @@ fun TicketDetailScreen(
                                     }
                                 )
                             }
-                            .pointerInput(barcodeType, displaySize, zoneInnerW) {
+                            .pointerInput(displaySize, zoneInnerW) {
                                 detectTransformGestures { _, pan, zoom, _ ->
                                     scale = (scale * zoom).coerceIn(1f, 5f)
                                     val mpx =
@@ -298,30 +298,6 @@ fun TicketDetailScreen(
                         }
                     }
 
-                    // SEGMENTED TOGGLE (between barcode zone and info card)
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        SegmentedButton(
-                            selected = barcodeType == BarcodeGenerator.Type.AZTEC,
-                            onClick = {
-                                if (barcodeType != BarcodeGenerator.Type.AZTEC) {
-                                    scale = 1f; offsetX = 0f; offsetY = 0f
-                                    barcodeType = BarcodeGenerator.Type.AZTEC
-                                }
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                        ) { Text("AZTEC") }
-                        SegmentedButton(
-                            selected = barcodeType == BarcodeGenerator.Type.CODE128,
-                            onClick = {
-                                if (barcodeType != BarcodeGenerator.Type.CODE128) {
-                                    scale = 1f; offsetX = 0f; offsetY = 0f
-                                    barcodeType = BarcodeGenerator.Type.CODE128
-                                }
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                        ) { Text("CODE128") }
-                    }
-
                     // INFO CARD (below)
                     InfoAndValidityCard(details = d, purchase = purchase)
                 }
@@ -345,114 +321,84 @@ private fun InfoAndValidityCard(details: TicketDetails, purchase: Purchase) {
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = titleFor(details, purchase),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+            IconValueRow(
+                icon = Icons.Rounded.ConfirmationNumber,
+                value = titleFor(details, purchase)
             )
 
-            details.ticketData?.jegySorszam?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                )
-            }
-
-            val priceText = buildString {
-                append("%.0f".format(Locale.US, purchase.amount))
-                if (purchase.currency.isNotBlank()) append(" ${purchase.currency}")
-            }
-            Text(
-                text = priceText,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+            IconValueRow(
+                icon = Icons.Rounded.Sell,
+                value = buildString {
+                    append("%.0f".format(Locale.US, purchase.amount))
+                    if (purchase.currency.isNotBlank()) append(" ${purchase.currency}")
+                }
             )
 
-            Spacer(Modifier.height(6.dp))
-
-            ValiditySection(validFrom = purchase.validFrom, validTo = purchase.validTo)
+            val validityText = validityText(purchase)
+            if (validityText != null) {
+                IconValueRow(icon = Icons.Rounded.Schedule, value = validityText)
+            }
         }
     }
 }
 
 @Composable
-private fun ValiditySection(validFrom: String?, validTo: String?) {
-    val from = parseDate(validFrom)
-    val to = parseDate(validTo)
-    val now = LocalDateTime.now()
-    val expired = to == null || to.isBefore(now)
-
-    val formatter = DateTimeFormatter.ofPattern("yyyy. MMM d.", Locale("hu"))
-    val fallback = DateTimeFormatter.ofPattern("yyyy.MM.dd.")
-
-    fun fmt(ldt: LocalDateTime?): String =
-        ldt?.toLocalDate()?.let { d ->
-            runCatching { d.format(formatter) }.getOrElse { d.format(fallback) }
-        } ?: "–"
-
-    if (!expired && to != null) {
-        val days = ChronoUnit.DAYS.between(now.toLocalDate(), to.toLocalDate().plusDays(1)).coerceAtLeast(0)
+private fun IconValueRow(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .background(
+                    MaterialTheme.colorScheme.primary,
+                    RoundedCornerShape(12.dp)
+                )
+                .padding(8.dp)
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.height(20.dp).width(20.dp)
+            )
+        }
         Text(
-            text = "még $days nap",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = "${fmt(from)} – ${fmt(to)}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
-    } else {
-        Text(
-            text = "${fmt(from)} – ${fmt(to)}",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
         )
     }
 }
 
-private fun parseDate(raw: String?): LocalDateTime? {
-    if (raw.isNullOrBlank()) return null
-    val patterns = listOf(
-        "yyyy-MM-dd'T'HH:mm:ss[.SSS]XXX",
-        "yyyy-MM-dd'T'HH:mm:ssXXX",
-        "yyyy-MM-dd'T'HH:mm:ss[.SSS]",
-        "yyyy-MM-dd'T'HH:mm:ss",
-        "yyyy-MM-dd"
+private fun parseDate(iso: String?): LocalDateTime? {
+    if (iso.isNullOrBlank()) return null
+    val formats = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "yyyy-MM-dd'T'HH:mm:ssXXX",
+        "yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd"
     )
-    for (pattern in patterns) {
+    for (f in formats) {
         try {
-            val fmt = DateTimeFormatter.ofPattern(pattern)
-            return when {
-                pattern.endsWith("XXX") -> ZonedDateTime.parse(raw, fmt).toLocalDateTime()
-                pattern == "yyyy-MM-dd" -> LocalDate.parse(raw, fmt).atStartOfDay()
-                else -> LocalDateTime.parse(raw, fmt)
-            }
-        } catch (_: Exception) {
-        }
+            return ZonedDateTime.parse(iso, DateTimeFormatter.ofPattern(f)).toLocalDateTime()
+        } catch (_: Exception) {}
     }
     return try {
-        ZonedDateTime.parse(raw).toLocalDateTime()
-    } catch (_: Exception) {
-        try {
-            LocalDateTime.parse(raw.take(19))
-        } catch (_: Exception) {
-            null
-        }
+        LocalDate.parse(iso).atStartOfDay()
+    } catch (_: Exception) { null }
+}
+
+private fun validityText(purchase: Purchase): String? {
+    val to = parseDate(purchase.validTo) ?: return null
+    val now = LocalDateTime.now()
+    return if (!to.isBefore(now)) {
+        val days = ChronoUnit.DAYS.between(now.toLocalDate(), to.toLocalDate().plusDays(1)).coerceAtLeast(0)
+        "még $days nap érvényes"
+    } else {
+        val from = parseDate(purchase.validFrom) ?: return null
+        val f = DateTimeFormatter.ofPattern("yyyy.MM.dd.", Locale("hu"))
+        "${from.format(f)} – ${to.format(f)}"
     }
 }
 

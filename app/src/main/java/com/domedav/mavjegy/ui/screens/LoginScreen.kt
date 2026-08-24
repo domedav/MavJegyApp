@@ -2,6 +2,7 @@ package com.domedav.mavjegy.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -81,13 +82,15 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
 
     LaunchedEffect(Unit) { appeared = true }
 
-    val cardScale by animateFloatAsState(
-        targetValue = if (appeared) 1f else 0.85f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "cardScale"
+    val cardAlpha by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = tween(durationMillis = 180),
+        label = "cardAlpha"
+    )
+    val cardSlide by animateDpAsState(
+        targetValue = if (appeared) 0.dp else 24.dp,
+        animationSpec = tween(durationMillis = 200),
+        label = "cardSlide"
     )
 
     val submitLogin: () -> Unit = submitLogin@{
@@ -122,8 +125,8 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                 .fillMaxWidth()
                 .padding(24.dp)
                 .graphicsLayer {
-                    scaleX = cardScale
-                    scaleY = cardScale
+                    alpha = cardAlpha
+                    translationY = cardSlide.toPx()
                 },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -346,19 +349,16 @@ private val RoundedCornerShapePill = RoundedCornerShape(24.dp)
 private fun StaggeredAppear(index: Int, content: @Composable () -> Unit) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        delay(index * 70L)
+        delay(index * 35L)
         visible = true
     }
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(
-            animationSpec = tween(durationMillis = 350)
+            animationSpec = tween(durationMillis = 180)
         ) + slideInVertically(
-            initialOffsetY = { it / 3 },
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
+            initialOffsetY = { it / 6 },
+            animationSpec = tween(durationMillis = 200)
         )
     ) {
         content()

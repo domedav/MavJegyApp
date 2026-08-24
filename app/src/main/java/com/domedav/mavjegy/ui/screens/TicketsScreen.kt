@@ -76,8 +76,8 @@ internal fun formatDate(iso: String?): String {
                 break
             } catch (_: Exception) {}
         }
-        parsed?.let { huDate.format(it) } ?: iso
-    } catch (_: Exception) { iso }
+        parsed?.let { huDate.format(it) } ?: "-"
+    } catch (_: Exception) { "-" }
 }
 
 private const val CACHE_FILE = "purchases_cache.json"
@@ -289,11 +289,13 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
                         maxLines = 1
                     )
                 }
-                Text(
-                    "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1
-                )
+                if (purchase.validFrom != null || purchase.validTo != null) {
+                    Text(
+                        "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1
+                    )
+                }
             }
             Surface(
                 shape = CircleShape,
