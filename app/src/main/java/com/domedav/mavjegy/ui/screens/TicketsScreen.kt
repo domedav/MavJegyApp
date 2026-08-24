@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
+import com.domedav.mavjegy.data.TicketCache
 import com.domedav.mavjegy.data.isPassTicket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -192,11 +193,30 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
+    // Lejárt jegyek: nem létezőnek vesszük – listából, cache-ből is eltávolítjuk
+    fun keepAlive(list: List<Purchase>): List<Purchase> {
+        val now = LocalDateTime.now()
+        return list.filter { p ->
+            val statusOk = p.status.trim().equals("Ervenyes", ignoreCase = true)
+            val to = parseIso(p.validTo)
+            statusOk && (to == null || !to.isBefore(now))
+        }
+    }
+
+    suspend fun purgeRemoved(context: Context, oldList: List<Purchase>, kept: List<Purchase>) {
+        val keptIds = kept.map { it.id }.toSet()
+        withContext(Dispatchers.IO) {
+            oldList.filter { it.id !in keptIds }.forEach { TicketCache.delete(context, it.id) }
+        }
+    }
+
     LaunchedEffect(Unit) {
-        purchases = withContext(Dispatchers.IO) { readCache(context) }
+        val cached = withContext(Dispatchers.IO) { readCache(context) }
+        purchases = keepAlive(cached)
         loading = true
         try {
-            val fresh = withContext(Dispatchers.IO) { api.getPurchases() }
+            val fresh = keepAlive(withContext(Dispatchers.IO) { api.getPurchases() })
+            purgeRemoved(context, cached, fresh)
             purchases = fresh
             withContext(Dispatchers.IO) { writeCache(context, fresh) }
             error = null
@@ -211,7 +231,9 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
         loading = true
         scope.launch {
             try {
-                val fresh = withContext(Dispatchers.IO) { api.getPurchases() }
+                val old = purchases
+                val fresh = keepAlive(withContext(Dispatchers.IO) { api.getPurchases() })
+                purgeRemoved(context, old, fresh)
                 purchases = fresh
                 withContext(Dispatchers.IO) { writeCache(context, fresh) }
                 error = null
@@ -229,7 +251,7 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
         label = "refreshSpin"
     )
 
-    val valid = purchases.filter { it.status.trim().equals("Ervenyes", ignoreCase = true) }
+    val valid = purchases
 
     Scaffold(
         snackbarHost = {

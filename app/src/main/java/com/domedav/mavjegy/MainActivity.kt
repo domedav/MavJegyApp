@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.rememberCoroutineScope
@@ -173,12 +174,15 @@ fun AppRoot(api: MavApi) {
             )
         }
 
-        // A selection karika MINDIG primary és MINDIG a kiválasztott elem alatt van:
-        // csak a pozíciója csúszik (spring), a színek soha nem cserélnek át –
-        // a kiválasztott ikon onPrimary, a másik onSurfaceVariant
+        // A selection karika MINDIG primary; a KÉT IKON színe a lerp alatt
+        // folyamatosan cserélődik: amelyik ikon alatt épp a karika áll, az világosodik
+        val dragProgress = (dragOffset.value / itemSizePx).coerceIn(0f, 1f)
         val circleColor = MaterialTheme.colorScheme.primary
-        val onCircleColor = MaterialTheme.colorScheme.onPrimary
         val pillColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        // 0. ikon: onPrimary -> onSurfaceVariant, 1. ikon: onSurfaceVariant -> onPrimary
+        val tint0 = lerp(MaterialTheme.colorScheme.onPrimary, MaterialTheme.colorScheme.onSurfaceVariant, dragProgress)
+        val tint1 = lerp(MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.onPrimary, dragProgress)
+        val iconTints = listOf(tint0, tint1)
 
         Surface(
             modifier = Modifier
@@ -233,8 +237,7 @@ fun AppRoot(api: MavApi) {
                             Icon(
                                 icon,
                                 contentDescription = label,
-                                tint = if (selected) onCircleColor
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = iconTints[index],
                                 modifier = Modifier.size(26.dp)
                             )
                         }

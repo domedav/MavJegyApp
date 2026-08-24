@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.domedav.mavjegy.ui.screens
 
 import androidx.activity.compose.BackHandler
@@ -516,15 +518,48 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = regBirthDate,
-                                onValueChange = { regBirthDate = it },
-                                label = { Text("Születési dátum (yyyy.MM.dd.)") },
-                                singleLine = true,
-                                enabled = !loading,
-                                shape = FieldShape,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            // Dátum: selector, nem input box
+                            var showRegDatePicker by remember { mutableStateOf(false) }
+                            if (showRegDatePicker) {
+                                val regDateState = androidx.compose.material3.rememberDatePickerState()
+                                androidx.compose.material3.DatePickerDialog(
+                                    onDismissRequest = { showRegDatePicker = false },
+                                    confirmButton = {
+                                        androidx.compose.material3.TextButton(onClick = {
+                                            regDateState.selectedDateMillis?.let { ms ->
+                                                regBirthDate = java.time.Instant.ofEpochMilli(ms)
+                                                    .atZone(java.time.ZoneOffset.UTC).toLocalDate()
+                                                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy.MM.dd."))
+                                            }
+                                            showRegDatePicker = false
+                                        }) { Text("OK") }
+                                    },
+                                    dismissButton = {
+                                        androidx.compose.material3.TextButton(onClick = { showRegDatePicker = false }) {
+                                            Text("Mégse")
+                                        }
+                                    }
+                                ) {
+                                    androidx.compose.material3.DatePicker(state = regDateState)
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = !loading) { showRegDatePicker = true }
+                            ) {
+                                OutlinedTextField(
+                                    value = regBirthDate,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Születési dátum") },
+                                    placeholder = { Text("Válassz dátumot") },
+                                    singleLine = true,
+                                    enabled = !loading,
+                                    shape = FieldShape,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                             Spacer(modifier = Modifier.height(12.dp))
                             OutlinedTextField(
                                 value = regPassword,

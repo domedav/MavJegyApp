@@ -55,4 +55,11 @@ object TicketCache {
             null
         }
     }
+
+    /** Lejárt / eltávolított jegyek cache-ének törlése – nem létezőként kezeljük */
+    fun delete(context: Context, purchaseId: String) {
+        try {
+            file(context, purchaseId).delete()
+        } catch (_: Exception) {}
+    }
 }

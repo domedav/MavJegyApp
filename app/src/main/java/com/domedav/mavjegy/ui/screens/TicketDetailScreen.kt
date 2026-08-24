@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.domedav.mavjegy.ui.screens
 
 import android.app.Activity
@@ -132,20 +134,7 @@ fun TicketDetailScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val isPass = purchase.isPassTicket()
 
-    // Vonalkód mód: false = lokális Aztec, true = szerver-oldali jegykép (GetJegykep, mint az eredeti appban)
-    var useServerImage by remember { mutableStateOf(false) }
-    var serverImageBytes by remember { mutableStateOf<ByteArray?>(null) }
-    var serverImageLoading by remember { mutableStateOf(false) }
-    var serverImageError by remember { mutableStateOf<String?>(null) }
-    val serverBitmap = remember(serverImageBytes) {
-        serverImageBytes?.let { bytes ->
-            runCatching {
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-            }.getOrNull()
-        }
-    }
-
-    // Bérlettulajdonosi adatok: felhasználói szerkesztés (csak bérletnél)
+    // Tulajdonosi adatok: felhasználói szerkesztés (fotó, név, dátum, azonosító)
     var showOwnerDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var ownerEdit by remember(purchase.id) { mutableStateOf(PassOwnerPrefs.load(context, purchase.id)) }
@@ -179,14 +168,21 @@ fun TicketDetailScreen(
 
     val expired = isPurchaseExpired(purchase)
 
-    // Szerverkép / egyéb hibák snackbarban
-    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
-    LaunchedEffect(serverImageError) {
-        serverImageError?.let {
-            snackbarHostState.showSnackbar(it)
-            serverImageError = null
+    // Szerkesztett fotó (ha van) a hash-alapú cache-ből
+    var customPhotoBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(ownerEdit?.photoHash) {
+        val hash = ownerEdit?.photoHash ?: return@LaunchedEffect
+        val bytes = withContext(Dispatchers.IO) {
+            com.domedav.mavjegy.data.OfflineStore.loadOwnerPhoto(context, hash)
+        }
+        customPhotoBitmap = bytes?.let {
+            runCatching { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }.getOrNull()
         }
     }
+    val displayPhotoBitmap = customPhotoBitmap ?: photoBitmap
+
+    // Hibák snackbarban
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
 
     LaunchedEffect(purchase.id, fetchTrigger) {
         loadingDetails = true
@@ -322,33 +318,21 @@ fun TicketDetailScreen(
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onDoubleTap = {
-                                    // Dupla koppintás: váltás a lokális Aztec és a szerver-oldali
-                                    // jegykép (GetJegykep – az eredeti app formátuma) között
-                                    if (!expired && !serialized.isNullOrBlank()) {
-                                        val target = !useServerImage
-                                        useServerImage = target
-                                        if (target && serverImageBytes == null && !serverImageLoading) {
-                                            serverImageLoading = true
-                                            scope.launch {
-                                                val result = api.getServerTicketImage(purchase.id, context)
-                                                serverImageBytes = result.bytes
-                                                serverImageError = result.error
-                                                serverImageLoading = false
-                                                if (result.bytes == null) useServerImage = false
-                                            }
-                                        }
-                                    }
+                                    // Dupla koppintás: nézet visszaállítása alaphelyzetbe
+                                    scale = 1f
+                                    offsetX = 0f
+                                    offsetY = topAnchoredOffsetY
+                                    ViewerPrefs.save(context, 1f, topAnchoredOffsetY / displaySize)
                                 }
                             )
                         }
-                        .pointerInput(displaySize, zoneInnerW, useServerImage, zoneW) {
-                            val baseSizeForMode = if (useServerImage) zoneW else displaySize
+                        .pointerInput(displaySize, zoneInnerW) {
                             detectTransformGestures { _, pan, zoom, _ ->
                                 // Agresszív kicsinyítés: egészen pici glyph-ig zoomolhatunk
                                 scale = (scale * zoom).coerceIn(0.15f, 5f)
                                 val mpx =
                                     if (scale > 1f) {
-                                        ((baseSizeForMode * scale - zoneInnerW) / 2f).coerceAtLeast(0f)
+                                        ((displaySize * scale - zoneInnerW) / 2f).coerceAtLeast(0f)
                                     } else 0f
                                 offsetX = if (scale > 1f) {
                                     (offsetX + pan.x).coerceIn(-mpx, mpx)
@@ -401,67 +385,34 @@ fun TicketDetailScreen(
                             }
                         }
 
-                        else -> when {
-                            // Szerver-oldali jegykép (eredeti app formátuma)
-                            useServerImage -> {
-                                val sbmp = serverBitmap
-                                when {
-                                    sbmp != null -> Image(
-                                        bitmap = sbmp,
-                                        contentDescription = "Jegykép",
-                                        contentScale = ContentScale.FillWidth,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .graphicsLayer {
-                                                scaleX = scale
-                                                scaleY = scale
-                                                translationX = offsetX
-                                                translationY = offsetY ?: 0f
-                                            }
-                                    )
+                        else -> {
+                            val bitmap = barcodeBitmap
+                            when {
+                                bitmap != null -> Image(
+                                bitmap = bitmap,
+                                contentDescription = "Vonalkód",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .aspectRatio(1f)
+                                    .width(with(density) { displaySize.toDp() })
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                        translationX = offsetX
+                                        translationY = offsetY ?: 0f
+                                    }
+                            )
 
-                                    serverImageLoading -> CircularProgressIndicator(
-                                        color = MaterialTheme.colorScheme.primary,
-                                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                                    )
+                            generatingBarcode -> CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                            )
 
-                                    else -> Text(
-                                        text = "Jegykép nem elérhető",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            else -> {
-                                val bitmap = barcodeBitmap
-                                when {
-                                    bitmap != null -> Image(
-                                    bitmap = bitmap,
-                                    contentDescription = "Vonalkód",
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .aspectRatio(1f)
-                                        .width(with(density) { displaySize.toDp() })
-                                        .graphicsLayer {
-                                            scaleX = scale
-                                            scaleY = scale
-                                            translationX = offsetX
-                                            translationY = offsetY ?: 0f
-                                        }
-                                )
-
-                                generatingBarcode -> CircularProgressIndicator(
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                                )
-
-                                else -> Text(
-                                    text = "Vonalkód nem elérhető",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                }
+                            else -> Text(
+                                text = "Vonalkód nem elérhető",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             }
                         }
                     }
@@ -474,7 +425,7 @@ fun TicketDetailScreen(
                     details = d,
                     purchase = purchase,
                     owner = effectiveOwner,
-                    photoBitmap = photoBitmap,
+                    photoBitmap = displayPhotoBitmap,
                     isPass = isPass,
                     onOwnerClick = { showOwnerDialog = true },
                     onEditClick = { showEditDialog = true }
@@ -525,12 +476,12 @@ fun TicketDetailScreen(
         if (showOwnerDialog && effectiveOwner != null) {
             OwnerDetailsDialog(
                 owner = effectiveOwner,
-                photoBitmap = photoBitmap,
+                photoBitmap = displayPhotoBitmap,
                 onDismiss = { showOwnerDialog = false }
             )
         }
 
-        // BÉRLETTULAJDONOS SZERKESZTÉS (csak bérletnél)
+        // BÉRLETTULAJDONOS / JEGYTULAJDONOS SZERKESZTÉS
         if (showEditDialog) {
             EditPassOwnerDialog(
                 initial = ownerEdit,
@@ -657,15 +608,13 @@ private fun OwnerAndValidityPanel(
                             }
                         }
                     }
-                    // Szerkesztés – csak bérletnél
-                    if (isPass) {
-                        IconButton(onClick = onEditClick) {
-                            Icon(
-                                Icons.Rounded.Edit,
-                                contentDescription = "Bérlettulajdonos szerkesztése",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                    // Szerkesztés – jegyeknél és bérleteknél egyaránt
+                    IconButton(onClick = onEditClick) {
+                        Icon(
+                            Icons.Rounded.Edit,
+                            contentDescription = "Tulajdonosi adatok szerkesztése",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -925,15 +874,108 @@ private fun EditPassOwnerDialog(
     onDismiss: () -> Unit,
     onSave: (PassOwnerPrefs.Edit) -> Unit
 ) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var birthDate by remember { mutableStateOf(initial?.birthDate ?: "") }
     var azonosito by remember { mutableStateOf(initial?.azonosito ?: "") }
+    var photoHash by remember { mutableStateOf(initial?.photoHash) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    // Fotó választó – a kiválasztott kép hash-elt, kompresszált cache-be kerül
+    val photoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes != null) {
+                    photoHash = com.domedav.mavjegy.data.OfflineStore.saveOwnerPhoto(context, bytes) ?: photoHash
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    if (showDatePicker) {
+        val initialState = androidx.compose.material3.rememberDatePickerState(
+            initialSelectedDateMillis = birthDate.takeIf { it.isNotBlank() }?.let { bd ->
+                try {
+                    java.time.LocalDate.parse(bd.replace(".", "-").let { s ->
+                        if (s.endsWith("-")) s.dropLast(1) else s })
+                        .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+                } catch (_: Exception) { null }
+            }
+        )
+        androidx.compose.material3.DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    initialState.selectedDateMillis?.let { ms ->
+                        birthDate = java.time.Instant.ofEpochMilli(ms)
+                            .atZone(java.time.ZoneOffset.UTC).toLocalDate()
+                            .format(DateTimeFormatter.ofPattern("yyyy.MM.dd."))
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Mégse") }
+            }
+        ) {
+            androidx.compose.material3.DatePicker(state = initialState)
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Bérlettulajdonos szerkesztése") },
+        title = { Text("Tulajdonosi adatok szerkesztése") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Fotó: koppintásra cserélhető
+                val customBmp = photoHash?.let { hash ->
+                    runCatching {
+                        val bytes = com.domedav.mavjegy.data.OfflineStore.loadOwnerPhoto(context, hash)
+                        bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+                    }.getOrNull()
+                }
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .clickable {
+                            photoPicker.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (customBmp != null) {
+                        Image(
+                            bitmap = customBmp,
+                            contentDescription = "Fotó módosítása",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            Icons.Rounded.Person,
+                            contentDescription = "Fotó hozzáadása",
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = "Fotó módosítása",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -941,17 +983,26 @@ private fun EditPassOwnerDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = birthDate,
-                    onValueChange = { birthDate = it },
-                    label = { Text("Születési dátum (yyyy.MM.dd.)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Dátum: selector, nem input box
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showDatePicker = true }
+                ) {
+                    OutlinedTextField(
+                        value = birthDate.ifBlank { "" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Születési dátum") },
+                        placeholder = { Text("Válassz dátumot") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 OutlinedTextField(
                     value = azonosito,
                     onValueChange = { azonosito = it },
-                    label = { Text("Bérletigazolvány azonosító") },
+                    label = { Text("Azonosító") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -963,7 +1014,8 @@ private fun EditPassOwnerDialog(
                     PassOwnerPrefs.Edit(
                         name = name.trim().takeIf { it.isNotEmpty() },
                         birthDate = birthDate.trim().takeIf { it.isNotEmpty() },
-                        azonosito = azonosito.trim().takeIf { it.isNotEmpty() }
+                        azonosito = azonosito.trim().takeIf { it.isNotEmpty() },
+                        photoHash = photoHash
                     )
                 )
             }) { Text("Mentés") }

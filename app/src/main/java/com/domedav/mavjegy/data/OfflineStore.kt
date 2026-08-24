@@ -1,14 +1,23 @@
 package com.domedav.mavjegy.data
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.security.MessageDigest
 
 /**
  * Agresszív offline cache: minden hálózati válasz diszkre kerül.
  * Hálózat nélkül a cache-ből hibátlanul működik az app.
+ *
+ * Fotók: SHA-256 hash-el deduplikálva (duplikátum csak egyszer tárolódik),
+ * kompresszáltan (JPEG, max. 2 MB) mentve.
  */
 object OfflineStore {
+
+    private const val MAX_PHOTO_BYTES = 2 * 1024 * 1024 // 2 MB
 
     private fun dir(context: Context, name: String): File =
         File(context.filesDir, name).apply { if (!exists()) mkdirs() }
@@ -26,17 +35,64 @@ object OfflineStore {
         null
     }
 
-    // --- Jegykép bájtok (szerver-oldali jegy/bérlet kép) ---
-    fun saveTicketImage(context: Context, purchaseId: String, bytes: ByteArray) {
-        try {
-            val f = File(dir(context, "jegykep_cache"), purchaseId.replace(Regex("[^A-Za-z0-9_-]"), "_"))
-            f.parentFile?.let { if (!it.exists()) it.mkdirs() }
-            f.writeBytes(bytes)
-        } catch (_: Exception) {}
+    // --- Bérlet/jegy utasfotó: hash -> deduplikált, kompresszált fájl ---
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+    /**
+     * Fotó bájt mentése: dekódol → méretez (max 1280 px) → JPEG tömörítés,
+     * amíg 2 MB alá nem csökken. Visszaadja a hash-t (deduplikációs kulcs).
+     */
+    fun saveOwnerPhoto(context: Context, rawBytes: ByteArray): String? {
+        return try {
+            val hash = sha256(rawBytes)
+            val out = dir(context, "owner_photo_cache")
+            val target = File(out, "$hash.jpg")
+            if (target.exists() && target.length() > 0) return hash // duplikátum: már megvan
+
+            var bmp = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size) ?: return null
+
+            // Méretezés: hosszabb oldal max 1280 px
+            val maxDim = 1280
+            val largest = maxOf(bmp.width, bmp.height)
+            if (largest > maxDim) {
+                val scale = maxDim.toFloat() / largest
+                bmp = Bitmap.createScaledBitmap(
+                    bmp,
+                    (bmp.width * scale).toInt().coerceAtLeast(1),
+                    (bmp.height * scale).toInt().coerceAtLeast(1),
+                    true
+                )
+            }
+
+            // Kompresszió: minőség csökkentése amíg < 2 MB
+            var quality = 85
+            var data: ByteArray
+            do {
+                val bos = ByteArrayOutputStream()
+                bmp.compress(Bitmap.CompressFormat.JPEG, quality, bos)
+                data = bos.toByteArray()
+                quality -= 10
+            } while (data.size > MAX_PHOTO_BYTES && quality >= 30)
+
+            target.parentFile?.let { if (!it.exists()) it.mkdirs() }
+            target.writeBytes(data)
+            hash
+        } catch (_: Exception) {
+            null
+        }
     }
 
-    fun loadTicketImage(context: Context, purchaseId: String): ByteArray? = try {
-        val f = File(dir(context, "jegykep_cache"), purchaseId.replace(Regex("[^A-Za-z0-9_-]"), "_"))
+    /** Base64 fotó kényelmi mentő */
+    fun saveOwnerPhotoBase64(context: Context, base64: String): String? = try {
+        saveOwnerPhoto(context, java.util.Base64.getDecoder().decode(base64))
+    } catch (_: Exception) {
+        null
+    }
+
+    fun loadOwnerPhoto(context: Context, hash: String): ByteArray? = try {
+        val f = File(dir(context, "owner_photo_cache"), "$hash.jpg")
         if (f.exists()) f.readBytes() else null
     } catch (_: Exception) {
         null

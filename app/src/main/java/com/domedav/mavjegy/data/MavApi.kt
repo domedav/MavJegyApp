@@ -54,12 +54,6 @@ data class PassOwnerData(
     val azonosito: String? = null
 )
 
-/** Szerver-oldali jegykép letöltés eredménye – hibaüzenettel együtt */
-data class TicketImageResult(
-    val bytes: ByteArray?,
-    val error: String? = null
-)
-
 class MavApi(private val tokenStore: TokenStore) {
 
     private val json = Json { isLenient = true; ignoreUnknownKeys = true }
@@ -320,62 +314,6 @@ class MavApi(private val tokenStore: TokenStore) {
         return null
     }
 
-    /**
-     * VIM (MobileServiceS) bejelentkezés – a GetJegykep EHHEZ a tokenhez kell,
-     * NEM az IK SAML userTokenXml-hez (Bejelentkezes -> LoginResponseVO.Token).
-     */
-    private suspend fun ensureVimSession(): Boolean = withContext(Dispatchers.IO) {
-        val expiry = tokenStore.getVimTokenExpiry()
-        if (!tokenStore.getVimToken().isNullOrBlank() &&
-            expiry > System.currentTimeMillis() + 60_000L
-        ) return@withContext true
-
-        val email = tokenStore.getEmail() ?: return@withContext false
-        val password = tokenStore.getPassword() ?: return@withContext false
-        if (!tokenStore.hasUaid()) tokenStore.setUaid(java.util.UUID.randomUUID().toString())
-
-        val body = buildJsonObject {
-            put("FelhasznaloAzonosito", email)
-            put("Jelszo", password)
-            put("Nyelv", "hu")
-            put("UAID", tokenStore.getUaid())
-        }.toString().toRequestBody(jsonBody)
-
-        try {
-            client.newCall(
-                Request.Builder()
-                    .url(vimBaseUrl + "Bejelentkezes")
-                    .header("User-Agent", USER_AGENT)
-                    .post(body)
-                    .build()
-            ).execute().use { r ->
-                if (!r.isSuccessful) return@withContext false
-                val root = json.parseToJsonElement(r.body!!.string())
-                val token = findStringKey(root, "Token") ?: return@withContext false
-                tokenStore.setVimToken(token)
-                tokenStore.setVimTokenExpiry(parseVimExpiry(findStringKey(root, "ErvenyessegVege")))
-                true
-            }
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun parseVimExpiry(raw: String?): Long {
-        if (raw.isNullOrBlank()) return 0L
-        Regex("/Date\\((-?\\d+)").find(raw)?.groupValues?.get(1)?.toLongOrNull()?.let { return it }
-        raw.toLongOrNull()?.let { return if (it > 99_999_999_999L) it else it * 1000L }
-        return try {
-            java.time.ZonedDateTime.parse(raw).toInstant().toEpochMilli()
-        } catch (_: Exception) {
-            try {
-                java.time.LocalDateTime.parse(raw.take(19))
-                    .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-            } catch (_: Exception) {
-                0L
-            }
-        }
-    }
 
     /** Uzenetek[] (H=hiba, M=üzenet, R=rendszerhiba) szövegek összefűzése */
     private fun extractServerMessages(el: kotlinx.serialization.json.JsonElement): String? {
@@ -394,66 +332,6 @@ class MavApi(private val tokenStore: TokenStore) {
         walk(el)
         return texts.takeIf { it.isNotEmpty() }?.joinToString("; ")
     }
-
-    /**
-     * Szerver-oldalon kirajzolt jegy/bérlet kép (vonalkóddal együtt) – az eredeti app
-     * pontosan így jeleníti meg: POST {VIM}/GetJegykep -> Bizonylatok[].Jegykep (base64).
-     * Offline esetén diszk-cache-ből szolgál; a hibát a result.error hordozza.
-     */
-    suspend fun getServerTicketImage(purchaseId: String, context: android.content.Context): TicketImageResult =
-        withContext(Dispatchers.IO) {
-            if (tokenStore.isDemo()) {
-                return@withContext TicketImageResult(
-                    null,
-                    "Demó módban nincs szerver-oldali jegykép – koppints vissza az Aztec kódra"
-                )
-            }
-            if (!ensureVimSession()) {
-                val cached = OfflineStore.loadTicketImage(context, purchaseId)
-                return@withContext if (cached != null) TicketImageResult(cached)
-                else TicketImageResult(null, "Nem sikerült a bejelentkezés a jegykép-szolgáltatáshoz")
-            }
-            val body = buildJsonObject {
-                put("BizonylatAzonosito", kotlinx.serialization.json.buildJsonArray { add(kotlinx.serialization.json.JsonPrimitive(purchaseId)) })
-                put("FelhasznaloAzonosito", tokenStore.getUserId() ?: tokenStore.getEmail() ?: "")
-                put("Nyelv", "hu")
-                put("Token", tokenStore.getVimToken())
-                put("UAID", tokenStore.getUaid())
-            }.toString().toRequestBody(jsonBody)
-
-            try {
-                client.newCall(
-                    Request.Builder()
-                        .url(vimBaseUrl + "GetJegykep")
-                        .header("User-Agent", USER_AGENT)
-                        .header("Accept", "gzip")
-                        .post(body)
-                        .build()
-                ).execute().use { r ->
-                    if (!r.isSuccessful) {
-                        val cached = OfflineStore.loadTicketImage(context, purchaseId)
-                        return@withContext if (cached != null) TicketImageResult(cached)
-                        else TicketImageResult(null, "Jegykép letöltés sikertelen: HTTP ${r.code}")
-                    }
-                    val root = json.parseToJsonElement(r.body!!.string())
-                    val b64 = findStringKey(root, "Jegykep")
-                    if (b64 != null) {
-                        val bytes = java.util.Base64.getDecoder().decode(b64)
-                        OfflineStore.saveTicketImage(context, purchaseId, bytes)
-                        TicketImageResult(bytes)
-                    } else {
-                        val msg = extractServerMessages(root)
-                        val cached = OfflineStore.loadTicketImage(context, purchaseId)
-                        if (cached != null) TicketImageResult(cached)
-                        else TicketImageResult(null, msg ?: "A szerver nem adott vissza jegyképet")
-                    }
-                }
-            } catch (e: Exception) {
-                val cached = OfflineStore.loadTicketImage(context, purchaseId)
-                if (cached != null) TicketImageResult(cached)
-                else TicketImageResult(null, e.message ?: "Hálózati hiba a jegykép letöltésekor")
-            }
-        }
 
     /** Rekurzív kulcskeresés a JSON fában (robusztus válaszparse). */
     private fun findStringKey(el: kotlinx.serialization.json.JsonElement, key: String): String? {
