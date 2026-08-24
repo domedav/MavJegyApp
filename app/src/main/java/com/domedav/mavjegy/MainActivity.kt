@@ -18,9 +18,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,12 +63,20 @@ import com.domedav.mavjegy.ui.theme.MavJegyTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Kötelezően álló képernyő
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         enableEdgeToEdge()
         val app = application as MavJegyApp
         val tokenStore = app.tokenStore
         val api = app.api
         setContent {
-            MavJegyTheme {
+            MavJegyTheme(dynamicColor = true) {
+                // Ha mégsem álló a tájolás, szóljon az app, hogy forgatás
+                val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+                if (configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                    RotatePrompt()
+                    return@MavJegyTheme
+                }
                 var loggedIn by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) {
                     loggedIn = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -90,6 +99,31 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun RotatePrompt() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Rounded.ConfirmationNumber,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.size(16.dp))
+            Text(
+                "Fordítsd álló helyzetbe a készüléket!",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -122,7 +156,8 @@ fun AppRoot(api: MavApi) {
             }
         }
 
-        // M3 Expressive floating toolbar - jobboldali vertikális pill, húzható selection karika
+        // M3 Expressive floating toolbar - jobboldali vertikális pill, alulra rögzítve,
+        // húzható selection karika - húzás közben folytonos színátmenettel
         val itemSizePx = with(LocalDensity.current) { 58.dp.toPx() }
         val dragOffset = remember { Animatable(0f) } // -1..1 skálán a kettő ikon közt
         val scope = rememberCoroutineScope()
@@ -134,15 +169,32 @@ fun AppRoot(api: MavApi) {
             )
         }
 
+        // Húzási progress (0..1) alapján interpolált színek: húzásra PRIMARY-ba megy át
+        val dragProgress = (dragOffset.value / itemSizePx).coerceIn(0f, 1f)
+        val circleColor = lerp(
+            MaterialTheme.colorScheme.surfaceContainerHigh,
+            MaterialTheme.colorScheme.primary,
+            dragProgress
+        )
+        val onCircleColor = lerp(
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            MaterialTheme.colorScheme.onPrimary,
+            dragProgress
+        )
+        val pillColor = lerp(
+            MaterialTheme.colorScheme.surfaceContainerHighest,
+            MaterialTheme.colorScheme.surfaceContainer,
+            dragProgress
+        )
+
         Surface(
             modifier = Modifier
-                .align(Alignment.CenterEnd)
+                .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .imePadding()
-                .padding(end = 12.dp)
+                .padding(end = 12.dp, bottom = 8.dp)
                 .shadow(6.dp, CircleShape),
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = pillColor,
             tonalElevation = 3.dp
         ) {
             Box(
@@ -154,7 +206,7 @@ fun AppRoot(api: MavApi) {
                         .offset { IntOffset(0, dragOffset.value.roundToInt()) }
                         .size(58.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
+                        .background(circleColor)
                 )
                 Column(
                     modifier = Modifier.pointerInput(itemSizePx) {
@@ -188,7 +240,7 @@ fun AppRoot(api: MavApi) {
                             Icon(
                                 icon,
                                 contentDescription = label,
-                                tint = if (selected) MaterialTheme.colorScheme.onPrimary
+                                tint = if (selected) onCircleColor
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(26.dp)
                             )

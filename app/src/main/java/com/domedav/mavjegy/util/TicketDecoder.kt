@@ -13,6 +13,14 @@ data class DecodedTicket(
     val rawJson: JsonObject?
 )
 
+data class TicketOwner(
+    val name: String?,
+    val birthDate: String?,
+    val passengerType: String?,
+    val photoBase64: String?,
+    val azonosito: String? = null
+)
+
 object TicketDecoder {
 
     private val json = Json { isLenient = true; ignoreUnknownKeys = true }
@@ -40,6 +48,54 @@ object TicketDecoder {
         } catch (_: Exception) {
             null
         }
+    }
+
+    fun extractOwner(rawJson: JsonObject?): TicketOwner? {
+        if (rawJson == null) return null
+        var name: String? = null
+        var birthDate: String? = null
+        var passengerType: String? = null
+        var photoBase64: String? = null
+        var azonosito: String? = null
+
+        fun walk(obj: JsonObject) {
+            obj.forEach { (key, v) ->
+                when {
+                    key == "UtazoNeve" && v is JsonPrimitive && !v.isStringNullBlank() && name == null ->
+                        name = v.content
+
+                    key == "SzuletesiDatum" && v is JsonPrimitive && !v.isStringNullBlank() && birthDate == null ->
+                        birthDate = v.content
+
+                    key == "Kod" && v is JsonPrimitive && !v.isStringNullBlank() &&
+                        v.content.startsWith("HU_") && passengerType == null ->
+                        passengerType = v.content
+
+                    key.equals("NevesitesAzonosito", true) && v is JsonPrimitive && !v.isStringNullBlank() && azonosito == null ->
+                        azonosito = v.content
+
+                    key.equals("berletIgazolvanyazonosito", true) && v is JsonPrimitive && !v.isStringNullBlank() && azonosito == null ->
+                        azonosito = v.content
+
+                    key == "BinarisAllomany" && v is JsonObject && photoBase64 == null -> {
+                        val raw = (v["\$value"] as? JsonPrimitive)?.content
+                        if (!raw.isNullOrBlank()) photoBase64 = raw
+                    }
+                }
+                when (v) {
+                    is JsonObject -> walk(v)
+                    is kotlinx.serialization.json.JsonArray ->
+                        v.forEach { e ->
+                            if (e is JsonObject) walk(e)
+                        }
+                    else -> {}
+                }
+            }
+        }
+
+        walk(rawJson)
+        return if (name == null && birthDate == null && passengerType == null && photoBase64 == null && azonosito == null) null
+        else TicketOwner(name, birthDate, passengerType, photoBase64, azonosito)
     }
 
     private fun findKod(obj: JsonObject): String? {

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -25,22 +26,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Train
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,8 +56,62 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.text.SimpleDateFormat
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import java.util.Date
 import java.util.Locale
+
+@Composable
+private fun ValiditySubtitle(purchase: Purchase, isPass: Boolean) {
+    val now = LocalDateTime.now()
+    val to = parseIso(purchase.validTo)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (isPass) {
+            // Bérlet: hátralévő napok
+            if (to != null && !to.isBefore(now)) {
+                val days = ChronoUnit.DAYS.between(now.toLocalDate(), to.toLocalDate().plusDays(1)).coerceAtLeast(0)
+                Icon(
+                    Icons.Rounded.Timer,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    "$days napig érvényes",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1
+                )
+            }
+        } else {
+            // Jegy: melyik napon/időpontban érvényes
+            purchase.validFrom?.takeIf { it.isNotBlank() }?.let { vf ->
+                Icon(
+                    Icons.Rounded.Schedule,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    formatDate(vf),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+private fun parseIso(iso: String?): LocalDateTime? {
+    if (iso.isNullOrBlank()) return null
+    for (fmt in isoFormats) {
+        try {
+            return SimpleDateFormat(fmt, Locale.US).apply { isLenient = false }.parse(iso)
+                ?.let { java.time.Instant.ofEpochMilli(it.time).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() }
+        } catch (_: Exception) {}
+    }
+    return null
+}
 
 private val huDate = SimpleDateFormat("yyyy.MM.dd HH:mm", Locale("hu"))
 
@@ -102,7 +155,8 @@ private fun readCache(context: Context): List<Purchase> = try {
                 status = o.optString("status", ""),
                 takenOver = o.optBoolean("takenOver", false),
                 amount = o.optDouble("amount", 0.0),
-                currency = o.optString("currency", "HUF")
+                currency = o.optString("currency", "HUF"),
+                name = o.optString("name", "").ifEmpty { null }
             )
         } catch (_: Exception) { null }
     }
@@ -122,16 +176,15 @@ private fun writeCache(context: Context, purchases: List<Purchase>) = try {
                 put("takenOver", p.takenOver)
                 put("amount", p.amount)
                 put("currency", p.currency)
+                put("name", p.name ?: "")
             }
         )
     }
     context.openFileOutput(CACHE_FILE, Context.MODE_PRIVATE).use { it.write(arr.toString().toByteArray()) }
 } catch (_: Exception) {}
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
-    var tab by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(false) }
     var purchases by remember { mutableStateOf<List<Purchase>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -176,13 +229,13 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
     )
 
     val valid = purchases.filter { it.status.trim().equals("Ervenyes", ignoreCase = true) }
-    val expired = purchases.filter { !it.status.trim().equals("Ervenyes", ignoreCase = true) }
 
     Scaffold(
         topBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -208,10 +261,6 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-            PrimaryTabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Érvényes") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Lejárt") })
-            }
             error?.let {
                 Text(
                     text = "Hiba: $it",
@@ -220,7 +269,6 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                 )
             }
-            val list = if (tab == 0) valid else expired
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
@@ -233,7 +281,7 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(list, key = { it.id }) { purchase ->
+                items(valid, key = { it.id }) { purchase ->
                     PurchaseCard(purchase = purchase, onClick = { onOpenDetail(purchase) })
                 }
             }
@@ -248,10 +296,11 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
     Card(
         shape = if (isValid) RoundedCornerShape(28.dp) else RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isValid)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = when {
+                !isValid -> MaterialTheme.colorScheme.surfaceContainerHighest
+                isPass -> MaterialTheme.colorScheme.primaryContainer      // bérlet: primary
+                else -> MaterialTheme.colorScheme.tertiaryContainer       // jegy: tertiary
+            }
         ),
         border = if (!isValid) androidx.compose.foundation.BorderStroke(
             1.dp,
@@ -287,12 +336,16 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
                 )
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = if (isPass) "Bérlet" else "Jegy",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
-                )
+                // Pontos név – jegynél ha az API nem ad nevet, semmit nem írunk ki
+                val titleText = if (isPass) "Bérlet" else purchase.name
+                if (!titleText.isNullOrBlank()) {
+                    Text(
+                        text = titleText,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
                 if (purchase.validFrom != null || purchase.validTo != null) {
                     Text(
                         "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
@@ -300,6 +353,7 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
                         maxLines = 1
                     )
                 }
+                ValiditySubtitle(purchase = purchase, isPass = isPass)
             }
             Surface(
                 shape = CircleShape,

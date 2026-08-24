@@ -1,21 +1,22 @@
 package com.domedav.mavjegy.ui.screens
 
 import android.app.Activity
+import android.graphics.BitmapFactory
 import android.view.WindowManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,25 +28,35 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.ConfirmationNumber
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Sell
+import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -55,19 +66,29 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
 import com.domedav.mavjegy.data.TicketCache
 import com.domedav.mavjegy.data.TicketDetails
 import com.domedav.mavjegy.util.BarcodeGenerator
+import com.domedav.mavjegy.util.PassOwnerPrefs
 import com.domedav.mavjegy.util.TicketDecoder
+import com.domedav.mavjegy.util.TicketOwner
+import com.domedav.mavjegy.util.ViewerPrefs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.Base64
 import java.util.Locale
 
 @Composable
@@ -104,7 +125,53 @@ fun TicketDetailScreen(
     var barcodeBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var generatingBarcode by remember { mutableStateOf(true) }
 
-    var scale by remember { mutableStateOf(1f) }
+    var owner by remember { mutableStateOf<TicketOwner?>(null) }
+    var photoBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val isPass = purchase.startStation == null
+
+    // Vonalkód mód: false = lokális Aztec, true = szerver-oldali jegykép (GetJegykep, mint az eredeti appban)
+    var useServerImage by remember { mutableStateOf(false) }
+    var serverImageBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var serverImageLoading by remember { mutableStateOf(false) }
+    val serverBitmap = remember(serverImageBytes) {
+        serverImageBytes?.let { bytes ->
+            runCatching {
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+
+    // Bérlettulajdonosi adatok: felhasználói szerkesztés (csak bérletnél)
+    var showOwnerDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var ownerEdit by remember(purchase.id) { mutableStateOf(PassOwnerPrefs.load(context, purchase.id)) }
+
+    // Utastípus kód -> emberi név (GetAlapadatok)
+    var typeNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(Unit) {
+        typeNames = runCatching { api.getTypeNames() }.getOrDefault(emptyMap())
+    }
+
+    fun resolveType(code: String?): String? {
+        val c = code?.takeIf { it.isNotBlank() } ?: return null
+        return typeNames[c] ?: typeNames[c.uppercase()] ?: if (c.startsWith("HU_")) null else c
+    }
+
+    val effectiveOwner = when {
+        owner == null && ownerEdit == null -> null
+        else -> TicketOwner(
+            name = ownerEdit?.name ?: owner?.name,
+            birthDate = ownerEdit?.birthDate ?: owner?.birthDate,
+            passengerType = resolveType(owner?.passengerType),
+            photoBase64 = owner?.photoBase64,
+            azonosito = ownerEdit?.azonosito ?: owner?.azonosito
+        )
+    }
+
+    val savedViewer = remember { ViewerPrefs.load(context) }
+    var scale by remember { mutableStateOf(savedViewer?.first ?: 1f) }
     var offsetX by remember { mutableStateOf(0f) }
     var offsetY by remember { mutableStateOf<Float?>(null) }
 
@@ -135,177 +202,264 @@ fun TicketDetailScreen(
 
     val serialized = details?.ticketData?.serializedTicketData
 
-    // FULL PAGE — themed page background, no floating white cards
+    // FULL PAGE — themed page background
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
     ) {
-        BoxWithConstraints(
-            modifier = Modifier.fillMaxSize()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
         ) {
-            val screenWpx = with(density) { maxWidth.toPx() }.toInt()
-            val barcodeTargetPx = (screenWpx * 2).coerceAtLeast(256)
-
-            val screenW = constraints.maxWidth.toFloat()
-            val screenH = constraints.maxHeight.toFloat()
-
-            // Barcode zone content inset 25% from each horizontal edge (~50% screen width glyph)
-            val zoneHorizontalInset = screenW * 0.25f
-            val zoneInnerW = screenW - zoneHorizontalInset * 2f
-            val zoneH = screenH
-            val baseSize = minOf(zoneInnerW, zoneH)
-            val displaySize = baseSize * 0.70f   // 30% kisebb, hogy a scanner beolvassa
-
-            // Pan rules: szimmetrikus fel/le
-            val maxPanYUp = 0.60f * baseSize
-            val maxPanYDown = 0.60f * baseSize
-
-            fun clampOffsetY(y: Float): Float = y.coerceIn(-maxPanYUp, maxPanYDown)
-
-            // Default: glyph center lands at upper fifth of the screen (top-anchored)
-            val topAnchoredOffsetY = (-(screenH * 0.30f)).coerceIn(-maxPanYUp * 0.45f, maxPanYDown)
-            if (offsetY == null) offsetY = topAnchoredOffsetY
-
-            LaunchedEffect(serialized, barcodeTargetPx, fetchTrigger, expired) {
-                if (expired || serialized.isNullOrBlank()) {
-                    generatingBarcode = false
-                    return@LaunchedEffect
-                }
-                generatingBarcode = true
-                val decoded = withContext(Dispatchers.Default) {
-                    runCatching { TicketDecoder.decodeSerialized(serialized) }.getOrNull()
-                }
-                val content = decoded?.barcodeContent
-                if (content.isNullOrBlank()) {
-                    generatingBarcode = false
-                    return@LaunchedEffect
-                }
-                barcodeBitmap = withContext(Dispatchers.Default) {
-                    try {
-                        BarcodeGenerator.generate(content, BarcodeGenerator.Type.AZTEC, barcodeTargetPx, barcodeTargetPx)
-                    } catch (_: Exception) {
-                        null
-                    }
-                }
-                generatingBarcode = false
-            }
-
-            // GESTURE / CONTENT ZONE — code floats directly on the page surface,
-            // no popup container, gestures cover the whole middle area
-            Box(
+            // ---------------- VONALKÓD ZÓNA ----------------
+            BoxWithConstraints(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onDoubleTap = {
-                                scale = 1f
-                                offsetX = 0f
-                                offsetY = topAnchoredOffsetY
-                            }
-                        )
-                    }
-                    .pointerInput(displaySize, zoneInnerW) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 5f)
-                            val mpx =
-                                if (scale > 1f) {
-                                    ((displaySize * scale - zoneInnerW) / 2f).coerceAtLeast(0f)
-                                } else 0f
-                            offsetX = if (scale > 1f) {
-                                (offsetX + pan.x).coerceIn(-mpx, mpx)
-                            } else 0f
-                            offsetY = clampOffsetY((offsetY ?: 0f) + pan.y)
-                        }
-                    },
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .weight(1f)
             ) {
-                when {
-                    loadingDetails && details == null && errorMessage == null -> {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                        )
-                    }
+                val zoneW = constraints.maxWidth.toFloat()
+                val zoneH = constraints.maxHeight.toFloat()
+                val barcodeTargetPx = (with(density) { maxWidth.toPx() }.toInt() * 2).coerceAtLeast(256)
 
-                    errorMessage != null && !hasCached && details == null -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Text(
-                                text = errorMessage ?: "Ismeretlen hiba",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-                            Button(onClick = { fetchTrigger++ }) {
-                                Text("Újrapróbálás")
-                            }
+                // Glyph méret: agresszíven kicsi, hogy messziről / kicsinyítve is beolvasható legyen
+                val zoneHorizontalInset = zoneW * 0.25f
+                val zoneInnerW = zoneW - zoneHorizontalInset * 2f
+                val baseSize = minOf(zoneInnerW, zoneH)
+                val displaySize = baseSize * 0.55f
+
+                // Pan szabályok: bőven felfele mozgatható (a zóna kétszerese), lefelé kicsit kevesebb
+                val maxPanYUp = displaySize * 2f
+                val maxPanYDown = displaySize * 0.75f
+
+                fun clampOffsetY(y: Float): Float = y.coerceIn(-maxPanYUp, maxPanYDown)
+
+                // Alapértelmezett (nincs mentett állapot): középen
+                val topAnchoredOffsetY = 0f
+                if (offsetY == null) {
+                    offsetY = savedViewer?.let { (_, ratio) ->
+                        clampOffsetY(ratio * displaySize)
+                    } ?: topAnchoredOffsetY
+                }
+
+                LaunchedEffect(serialized) {
+                    val decoded = if (serialized.isNullOrBlank()) null
+                    else withContext(Dispatchers.Default) {
+                        runCatching { TicketDecoder.decodeSerialized(serialized) }.getOrNull()
+                    }
+                    val o = decoded?.rawJson?.let { TicketDecoder.extractOwner(it) }
+                    if (o != null) {
+                        owner = o
+                        photoBitmap = decodePhoto(o.photoBase64)
+                    } else {
+                        // Bérlet fallback: tulajdonos a HPT (bérletes utas) adatokból
+                        owner = null
+                        photoBitmap = null
+                        val po = runCatching { api.getPassOwnerData() }.getOrNull()
+                        po?.let {
+                            owner = TicketOwner(it.fullName, it.birthDate, null, it.photoBase64, it.azonosito)
+                            photoBitmap = decodePhoto(it.photoBase64)
                         }
                     }
+                }
 
-                    expired -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.TopCenter
-                        ) {
-                            Surface(
+                @OptIn(FlowPreview::class)
+                LaunchedEffect(displaySize) {
+                    snapshotFlow { scale to (offsetY ?: 0f) }
+                        .distinctUntilChanged()
+                        .debounce(400)
+                        .collect { (s, y) ->
+                            ViewerPrefs.save(context, s, y / displaySize)
+                        }
+                }
+
+                LaunchedEffect(serialized, barcodeTargetPx, fetchTrigger, expired) {
+                    if (expired || serialized.isNullOrBlank()) {
+                        generatingBarcode = false
+                        return@LaunchedEffect
+                    }
+                    generatingBarcode = true
+                    val decoded = withContext(Dispatchers.Default) {
+                        runCatching { TicketDecoder.decodeSerialized(serialized) }.getOrNull()
+                    }
+                    val content = decoded?.barcodeContent
+                    if (content.isNullOrBlank()) {
+                        generatingBarcode = false
+                        return@LaunchedEffect
+                    }
+                    barcodeBitmap = withContext(Dispatchers.Default) {
+                        try {
+                            BarcodeGenerator.generate(content, BarcodeGenerator.Type.AZTEC, barcodeTargetPx, barcodeTargetPx)
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                    generatingBarcode = false
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onDoubleTap = {
+                                    // Dupla koppintás: váltás a lokális Aztec és a szerver-oldali
+                                    // jegykép (GetJegykep – az eredeti app formátuma) között
+                                    if (!expired && !serialized.isNullOrBlank()) {
+                                        val target = !useServerImage
+                                        useServerImage = target
+                                        if (target && serverImageBytes == null && !serverImageLoading) {
+                                            serverImageLoading = true
+                                            scope.launch {
+                                                val bytes = api.getServerTicketImage(purchase.id)
+                                                serverImageBytes = bytes
+                                                serverImageLoading = false
+                                                if (bytes == null) useServerImage = false
+                                            }
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        .pointerInput(displaySize, zoneInnerW, useServerImage, zoneW) {
+                            val baseSizeForMode = if (useServerImage) zoneW else displaySize
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                // Agresszív kicsinyítés: egészen pici glyph-ig zoomolhatunk
+                                scale = (scale * zoom).coerceIn(0.15f, 5f)
+                                val mpx =
+                                    if (scale > 1f) {
+                                        ((baseSizeForMode * scale - zoneInnerW) / 2f).coerceAtLeast(0f)
+                                    } else 0f
+                                offsetX = if (scale > 1f) {
+                                    (offsetX + pan.x).coerceIn(-mpx, mpx)
+                                } else 0f
+                                offsetY = clampOffsetY((offsetY ?: 0f) + pan.y)
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    when {
+                        loadingDetails && details == null && errorMessage == null -> {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                            )
+                        }
+
+                        errorMessage != null && !hasCached && details == null -> {
+                            Column(
                                 modifier = Modifier
-                                    .padding(top = with(density) { screenH.toDp() } * 0.10f)
-                                    .size(with(density) { displaySize.toDp() }),
-                                shape = RoundedCornerShape(40.dp),
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(
+                                    text = errorMessage ?: "Ismeretlen hiba",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Button(onClick = { fetchTrigger++ }) {
+                                    Text("Újrapróbálás")
+                                }
+                            }
+                        }
+
+                        expired -> {
+                            Surface(
+                                shape = RoundedCornerShape(24.dp),
                                 color = MaterialTheme.colorScheme.errorContainer
                             ) {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "Lejárt",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                Text(
+                                    text = "Lejárt",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
+                                )
+                            }
+                        }
+
+                        else -> when {
+                            // Szerver-oldali jegykép (eredeti app formátuma)
+                            useServerImage -> {
+                                val sbmp = serverBitmap
+                                when {
+                                    sbmp != null -> Image(
+                                        bitmap = sbmp,
+                                        contentDescription = "Jegykép",
+                                        contentScale = ContentScale.FillWidth,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .graphicsLayer {
+                                                scaleX = scale
+                                                scaleY = scale
+                                                translationX = offsetX
+                                                translationY = offsetY ?: 0f
+                                            }
                                     )
+
+                                    serverImageLoading -> CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                    )
+
+                                    else -> Text(
+                                        text = "Jegykép nem elérhető",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            else -> {
+                                val bitmap = barcodeBitmap
+                                when {
+                                    bitmap != null -> Image(
+                                    bitmap = bitmap,
+                                    contentDescription = "Vonalkód",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .aspectRatio(1f)
+                                        .width(with(density) { displaySize.toDp() })
+                                        .graphicsLayer {
+                                            scaleX = scale
+                                            scaleY = scale
+                                            translationX = offsetX
+                                            translationY = offsetY ?: 0f
+                                        }
+                                )
+
+                                generatingBarcode -> CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                )
+
+                                else -> Text(
+                                    text = "Vonalkód nem elérhető",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                                 }
                             }
                         }
                     }
-
-                    else -> {
-                        val bitmap = barcodeBitmap
-                        when {
-                            bitmap != null -> Image(
-                                bitmap = bitmap,
-                                contentDescription = "Vonalkód",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .aspectRatio(1f)
-                                    .width(with(density) { displaySize.toDp() })
-                                    .graphicsLayer {
-                                        scaleX = scale
-                                        scaleY = scale
-                                        translationX = offsetX
-                                        translationY = offsetY ?: 0f
-                                    }
-                            )
-
-                            generatingBarcode -> CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                            )
-
-                            else -> Text(
-                                text = "Vonalkód nem elérhető",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                 }
+            }
+
+            // ---------------- ALSÓ PANEL: TULAJ + ÉRVÉNYESSÉG ----------------
+            details?.let { d ->
+                OwnerAndValidityPanel(
+                    details = d,
+                    purchase = purchase,
+                    owner = effectiveOwner,
+                    photoBitmap = photoBitmap,
+                    isPass = isPass,
+                    onOwnerClick = { showOwnerDialog = true },
+                    onEditClick = { showEditDialog = true }
+                )
             }
         }
 
@@ -348,25 +502,54 @@ fun TicketDetailScreen(
             }
         }
 
-        // BOTTOM INFO PANEL — docked to bottom edge, full width
-        details?.let { d ->
-            InfoAndValidityCard(
-                details = d,
-                purchase = purchase,
-                modifier = Modifier.align(Alignment.BottomCenter)
+        // TULAJDONOS RÉSZLET NÉZET (nagyított fotó + adatok)
+        if (showOwnerDialog && effectiveOwner != null) {
+            OwnerDetailsDialog(
+                owner = effectiveOwner,
+                photoBitmap = photoBitmap,
+                onDismiss = { showOwnerDialog = false }
+            )
+        }
+
+        // BÉRLETTULAJDONOS SZERKESZTÉS (csak bérletnél)
+        if (showEditDialog) {
+            EditPassOwnerDialog(
+                initial = ownerEdit,
+                onDismiss = { showEditDialog = false },
+                onSave = { edit ->
+                    PassOwnerPrefs.save(context, purchase.id, edit)
+                    ownerEdit = edit
+                    showEditDialog = false
+                }
             )
         }
     }
 }
 
+private suspend fun decodePhoto(base64: String?): androidx.compose.ui.graphics.ImageBitmap? {
+    val b64 = base64?.takeIf { it.isNotBlank() } ?: return null
+    return withContext(Dispatchers.Default) {
+        try {
+            val bytes = Base64.getDecoder().decode(b64)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
 @Composable
-private fun InfoAndValidityCard(
+private fun OwnerAndValidityPanel(
     details: TicketDetails,
     purchase: Purchase,
-    modifier: Modifier = Modifier
+    owner: TicketOwner?,
+    photoBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    isPass: Boolean,
+    onOwnerClick: () -> Unit,
+    onEditClick: () -> Unit
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 2.dp
@@ -374,33 +557,196 @@ private fun InfoAndValidityCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
                 .navigationBarsPadding()
-                .imePadding(),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            IconValueRow(
-                icon = Icons.Rounded.ConfirmationNumber,
-                value = titleFor(details, purchase)
-            )
-
-            IconValueRow(
-                icon = Icons.Rounded.Sell,
-                value = buildString {
-                    append("%.0f".format(Locale.US, purchase.amount))
-                    if (purchase.currency.isNotBlank()) append(if (purchase.currency == "HUF") " Ft" else " ${purchase.currency}")
+            owner?.let { o ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Fotó / avatar – koppintásra nagyított nézet a részletekkel
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.tertiaryContainer)
+                            .clickable(onClick = onOwnerClick),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val bmp = photoBitmap
+                        if (bmp != null) {
+                            Image(
+                                bitmap = bmp,
+                                contentDescription = "Utas fényképe",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                Icons.Rounded.Person,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(onClick = onOwnerClick),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        if (!o.name.isNullOrBlank()) {
+                            Text(
+                                text = o.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        o.birthDate?.takeIf { it.isNotBlank() }?.let { bd ->
+                            Text(
+                                text = "szül.: ${formatBirthDate(bd)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        // Bérletigazolvány azonosító – kiemelve, ez a lényeg
+                        o.azonosito?.takeIf { it.isNotBlank() }?.let { azon ->
+                            Text(
+                                text = azon,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 1.sp
+                            )
+                        }
+                        o.passengerType?.takeIf { it.isNotBlank() }?.let { pt ->
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = pt,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    // Szerkesztés – csak bérletnél
+                    if (isPass) {
+                        IconButton(onClick = onEditClick) {
+                            Icon(
+                                Icons.Rounded.Edit,
+                                contentDescription = "Bérlettulajdonos szerkesztése",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
-            )
+            }
 
-            val validityText = validityText(purchase)
-            if (validityText != null) {
+            // Pontos megnevezés – ha az API nem adja, nem írunk ki semmit
+            titleFor(details)?.let { nev ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    IconValueRow(
+                        icon = Icons.Rounded.ConfirmationNumber,
+                        value = nev,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            if (isPass) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    IconValueRow(
+                        icon = Icons.Rounded.ConfirmationNumber,
+                        value = "Bérlet ID: ${purchase.id}",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 IconValueRow(
-                    icon = Icons.Rounded.Schedule,
-                    value = validityText,
-                    iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    iconTint = MaterialTheme.colorScheme.onTertiaryContainer
+                    icon = Icons.Rounded.Sell,
+                    value = buildString {
+                        append("%.0f".format(Locale.US, purchase.amount))
+                        if (purchase.currency.isNotBlank()) append(if (purchase.currency == "HUF") " Ft" else " ${purchase.currency}")
+                    },
+                    modifier = Modifier.weight(1f)
                 )
             }
+
+            // Érvényességi intervallum + hátralévő napok badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                IconValueRow(
+                    icon = Icons.Rounded.Schedule,
+                    value = "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
+                    iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.weight(1f)
+                )
+                DaysRemainingBadge(purchase = purchase)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DaysRemainingBadge(purchase: Purchase) {
+    val to = parseDate(purchase.validTo)
+    val now = LocalDateTime.now()
+    val days = to?.let { ChronoUnit.DAYS.between(now.toLocalDate(), it.toLocalDate().plusDays(1)).toInt() }
+    val expiredNow = days == null || days <= 0
+
+    val container = if (expiredNow) MaterialTheme.colorScheme.errorContainer
+    else MaterialTheme.colorScheme.primaryContainer
+    val content = if (expiredNow) MaterialTheme.colorScheme.onErrorContainer
+    else MaterialTheme.colorScheme.onPrimaryContainer
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = container
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                Icons.Rounded.Timer,
+                contentDescription = null,
+                tint = content,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = if (expiredNow) "Lejárt" else "$days nap",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = content
+            )
         }
     }
 }
@@ -409,10 +755,12 @@ private fun InfoAndValidityCard(
 private fun IconValueRow(
     icon: ImageVector,
     value: String,
+    modifier: Modifier = Modifier,
     iconContainerColor: Color = MaterialTheme.colorScheme.primaryContainer,
     iconTint: Color = MaterialTheme.colorScheme.onPrimaryContainer
 ) {
     Row(
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -457,19 +805,181 @@ private fun isPurchaseExpired(purchase: Purchase): Boolean {
     return to.isBefore(LocalDateTime.now())
 }
 
-private fun validityText(purchase: Purchase): String? {
-    val to = parseDate(purchase.validTo) ?: return null
-    val now = LocalDateTime.now()
-    return if (!to.isBefore(now)) {
-        val days = ChronoUnit.DAYS.between(now.toLocalDate(), to.toLocalDate().plusDays(1)).coerceAtLeast(0)
-        "Még $days napig érvényes"
-    } else {
-        val from = parseDate(purchase.validFrom) ?: return null
-        val f = DateTimeFormatter.ofPattern("yyyy.MM.dd.", Locale("hu"))
-        "${from.format(f)} – ${to.format(f)}"
+private fun formatBirthDate(raw: String): String {
+    val cleaned = raw.trim()
+    // .NET JSON dátum: /Date(1234567890123)/ vagy /Date(1234567890123+0100)/
+    val netDate = Regex("/Date\\((-?\\d+)").find(cleaned)?.groupValues?.get(1)
+    // Epoch millisec / sec
+    val epochVal = netDate ?: (cleaned.takeIf { it.matches(Regex("\\d{10,13}")) })
+    if (epochVal != null) {
+        return try {
+            val n = epochVal.toLong()
+            val ms = if (n > 99_999_999_999L) n else n * 1000L
+            java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.", Locale("hu")))
+        } catch (_: Exception) {
+            cleaned
+        }
+    }
+    // ISO dátum / dátum-idő
+    return try {
+        LocalDate.parse(cleaned.take(10))
+            .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.", Locale("hu")))
+    } catch (_: Exception) {
+        cleaned
     }
 }
 
-private fun titleFor(details: TicketDetails?, purchase: Purchase): String =
+private fun titleFor(details: TicketDetails?): String? =
     details?.ajanlatNev?.takeIf { it.isNotBlank() }
-        ?: if (purchase.startStation == null) "Bérlet" else "Jegy"
+
+@Composable
+private fun OwnerDetailsDialog(
+    owner: TicketOwner,
+    photoBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Nagyított fotó
+                Box(
+                    modifier = Modifier
+                        .size(180.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.tertiaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val bmp = photoBitmap
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp,
+                            contentDescription = "Utas fényképe nagyítva",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            Icons.Rounded.Person,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(90.dp)
+                        )
+                    }
+                }
+
+                if (!owner.name.isNullOrBlank()) {
+                    Text(
+                        text = owner.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    owner.birthDate?.takeIf { it.isNotBlank() }?.let { bd ->
+                        OwnerDetailRow("Születési dátum", formatBirthDate(bd))
+                    }
+                    owner.azonosito?.takeIf { it.isNotBlank() }?.let { azon ->
+                        OwnerDetailRow("Bérletigazolvány azonosító", azon)
+                    }
+                    owner.passengerType?.takeIf { it.isNotBlank() }?.let { pt ->
+                        OwnerDetailRow("Utastípus", pt)
+                    }
+                }
+
+                TextButton(onClick = onDismiss) {
+                    Text("Bezárás")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OwnerDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+private fun EditPassOwnerDialog(
+    initial: PassOwnerPrefs.Edit?,
+    onDismiss: () -> Unit,
+    onSave: (PassOwnerPrefs.Edit) -> Unit
+) {
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var birthDate by remember { mutableStateOf(initial?.birthDate ?: "") }
+    var azonosito by remember { mutableStateOf(initial?.azonosito ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Bérlettulajdonos szerkesztése") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Teljes név") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = birthDate,
+                    onValueChange = { birthDate = it },
+                    label = { Text("Születési dátum (yyyy.MM.dd.)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = azonosito,
+                    onValueChange = { azonosito = it },
+                    label = { Text("Bérletigazolvány azonosító") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(
+                    PassOwnerPrefs.Edit(
+                        name = name.trim().takeIf { it.isNotEmpty() },
+                        birthDate = birthDate.trim().takeIf { it.isNotEmpty() },
+                        azonosito = azonosito.trim().takeIf { it.isNotEmpty() }
+                    )
+                )
+            }) { Text("Mentés") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Mégse") }
+        }
+    )
+}

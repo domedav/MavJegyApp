@@ -48,6 +48,20 @@ class TokenStore(private val context: Context) {
             .apply()
     }
 
+    fun getUserId(): String? = prefs.getString(KEY_USER_ID, null)
+
+    fun setUserId(id: String) {
+        prefs.edit().putString(KEY_USER_ID, id).apply()
+    }
+
+    fun getUaid(): String = prefs.getString(KEY_UAID, null) ?: ""
+
+    fun hasUaid(): Boolean = !getUaid().isNullOrBlank()
+
+    fun setUaid(id: String) {
+        prefs.edit().putString(KEY_UAID, id).apply()
+    }
+
     fun hasToken(): Boolean = !getToken().isNullOrBlank()
 
     fun hasCredentials(): Boolean =
@@ -61,5 +75,7 @@ class TokenStore(private val context: Context) {
         const val KEY_TOKEN = "userTokenXml"
         const val KEY_EMAIL = "email"
         const val KEY_PASSWORD = "password"
+        const val KEY_USER_ID = "felhasznaloAzonosito"
+        const val KEY_UAID = "uaid"
     }
 }

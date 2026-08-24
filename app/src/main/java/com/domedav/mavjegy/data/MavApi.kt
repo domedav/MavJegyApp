@@ -24,7 +24,8 @@ data class Purchase(
     val status: String,
     val takenOver: Boolean,
     val amount: Double,
-    val currency: String
+    val currency: String,
+    val name: String? = null
 )
 
 data class TicketData(
@@ -37,6 +38,13 @@ data class TicketDetails(
     val ajanlatNev: String? = null,
     val ervenyessegKezdete: String? = null,
     val ervenyessegVege: String? = null
+)
+
+data class PassOwnerData(
+    val fullName: String?,
+    val birthDate: String?,
+    val photoBase64: String?,
+    val azonosito: String? = null
 )
 
 class MavApi(private val tokenStore: TokenStore) {
@@ -52,6 +60,7 @@ class MavApi(private val tokenStore: TokenStore) {
     }
 
     private val baseUrl = "https://jegy-a.mav.hu/IK_API_PROD/api/"
+    private val vimBaseUrl = "https://vim.mav-start.hu/VIM/PR/20251120/MobileServiceS.svc/rest/"
     private val jsonBody = "application/json; charset=utf-8".toMediaType()
 
     suspend fun login(email: String, password: String): Result<Unit> = withContext(Dispatchers.IO) {
@@ -76,6 +85,11 @@ class MavApi(private val tokenStore: TokenStore) {
                     ?: error("GetUserToken: missing userData")
                 val token = userData["userTokenXml"]?.jsonPrimitive?.content
                     ?: error("GetUserToken: missing userTokenXml")
+                // VIM (GetJegykep / BerletTok*) hívásokhoz: felhasználóazonosító, ha adja a szerver
+                val userId = listOf("felhasznaloAzonosito", "FelhasznaloAzonosito", "regisztraciosAzonosito")
+                    .firstNotNullOfOrNull { k -> (userData[k] as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                    ?.takeIf { it.isNotBlank() }
+                if (userId != null) tokenStore.setUserId(userId)
                 tokenStore.setToken(token)
                 tokenStore.setCredentials(email, password)
             }
@@ -146,7 +160,9 @@ class MavApi(private val tokenStore: TokenStore) {
                     status = o.str("status") ?: "",
                     takenOver = o.bool("takenOver"),
                     amount = o.priceAmount(),
-                    currency = o.currencyKey()
+                    currency = o.currencyKey(),
+                    name = listOf("name", "Name", "Nev", "nev", "ajanlatNev", "title")
+                        .firstNotNullOfOrNull { k -> o.str(k) }
                 )
             } ?: emptyList()).distinctBy { it.id }
         }
@@ -197,6 +213,175 @@ class MavApi(private val tokenStore: TokenStore) {
                 ervenyessegVege = offer?.str("ervenyessegVege")
             )
         }
+    }
+
+    /**
+     * Bérletes utas adatai (tulajdonos) – ProfileApi/GetUserHPTDatas.
+     * Az eredeti app BerletesUtasAdatokVO mezőit követi:
+     * teljesNev, szuletesiDatum, berletKepString / eszigIgazolvanyszamHash stb.
+     */
+    suspend fun getPassOwnerData(): PassOwnerData? = withContext(Dispatchers.IO) {
+        val email = tokenStore.getEmail() ?: return@withContext null
+        val body = buildJsonObject { put("userEmail", email) }
+            .toString().toRequestBody(jsonBody)
+
+        fun doCall(token: String) = client.newCall(
+            Request.Builder()
+                .url(baseUrl + "ProfileApi/GetUserHPTDatas")
+                .header("User-Agent", USER_AGENT)
+                .header("UserTokenXml", token)
+                .post(body)
+                .build()
+        ).execute()
+
+        var response = doCall(tokenStore.getToken() ?: return@withContext null)
+        if (response.code == 401 || response.code == 403) {
+            response.close()
+            if (!ensureSession()) return@withContext null
+            response = doCall(tokenStore.getToken()!!)
+        }
+
+        try {
+            response.use { r ->
+                if (!r.isSuccessful) return@use null
+                val root = json.parseToJsonElement(r.body!!.string())
+                findPassOwner(root)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun findPassOwner(el: kotlinx.serialization.json.JsonElement): PassOwnerData? {
+        when (el) {
+            is JsonObject -> {
+                var fullName: String? = null
+                var birthDate: String? = null
+                var photo: String? = null
+                var azonosito: String? = null
+                el.forEach { (key, v) ->
+                    val prim = v as? kotlinx.serialization.json.JsonPrimitive
+                    val s = prim?.content?.takeIf { it.isNotBlank() && it != "null" }
+                    when {
+                        s != null && key.equals("teljesNev", true) -> fullName = s
+                        s != null && fullName == null && (key.equals("Nev", true) || key.equals("FullName", true)) -> fullName = s
+                        s != null && key.equals("szuletesiDatum", true) -> birthDate = s
+                        s != null && photo == null && (key.equals("Fenykep", true) || key.equals("berletKepString", true)) -> photo = s
+                        s != null && azonosito == null && (
+                            key.equals("NevesitesAzonosito", true) ||
+                                key.equals("berletIgazolvanyazonosito", true) ||
+                                key.equals("eszigIgazolvanyszam", true)
+                            ) -> azonosito = s
+                    }
+                }
+                if (fullName != null || birthDate != null || photo != null || azonosito != null) {
+                    return PassOwnerData(fullName, birthDate, photo, azonosito)
+                }
+                el.values.firstNotNullOfOrNull { findPassOwner(it) }?.let { return it }
+                return null
+            }
+            is kotlinx.serialization.json.JsonArray ->
+                el.firstNotNullOfOrNull { findPassOwner(it) }?.let { return it }
+            else -> {}
+        }
+        return null
+    }
+
+    /**
+     * Szerver-oldalon kirajzolt jegy/bérlet kép (vonalkóddal együtt) – az eredeti app
+     * pontosan így jeleníti meg: POST {VIM}/GetJegykep -> Bizonylatok[].Jegykep (base64).
+     */
+    suspend fun getServerTicketImage(purchaseId: String): ByteArray? = withContext(Dispatchers.IO) {
+        val token = tokenStore.getToken() ?: return@withContext null
+        if (!tokenStore.hasUaid()) tokenStore.setUaid(java.util.UUID.randomUUID().toString())
+        val body = buildJsonObject {
+            put("BizonylatAzonosito", kotlinx.serialization.json.buildJsonArray { add(kotlinx.serialization.json.JsonPrimitive(purchaseId)) })
+            put("FelhasznaloAzonosito", tokenStore.getUserId() ?: tokenStore.getEmail() ?: "")
+            put("Nyelv", "hu")
+            put("Token", token)
+            put("UAID", tokenStore.getUaid())
+        }.toString().toRequestBody(jsonBody)
+
+        runCatching {
+            client.newCall(
+                Request.Builder()
+                    .url(vimBaseUrl + "GetJegykep")
+                    .header("User-Agent", USER_AGENT)
+                    .header("Accept", "application/json")
+                    .post(body)
+                    .build()
+            ).execute().use { r ->
+                if (!r.isSuccessful) return@use null
+                val root = json.parseToJsonElement(r.body!!.string())
+                findStringKey(root, "Jegykep")?.let {
+                    java.util.Base64.getDecoder().decode(it)
+                }
+            }
+        }.getOrNull()
+    }
+
+    /** Rekurzív kulcskeresés a JSON fában (robusztus válaszparse). */
+    private fun findStringKey(el: kotlinx.serialization.json.JsonElement, key: String): String? {
+        when (el) {
+            is JsonObject -> {
+                (el[key] as? kotlinx.serialization.json.JsonPrimitive)?.let { p ->
+                    if (p.content.isNotBlank() && p.content != "null") return p.content
+                }
+                el.values.firstNotNullOfOrNull { findStringKey(it, key) }?.let { return it }
+            }
+            is kotlinx.serialization.json.JsonArray ->
+                el.firstNotNullOfOrNull { findStringKey(it, key) }?.let { return it }
+            else -> {}
+        }
+        return null
+    }
+
+    /**
+     * Utastípus / kedvezmény kód -> emberi név térkép a GetAlapadatok válaszból
+     * (PassengerTypeVO: Kod->Nev, DiscountVO: Azonosito->Nev). Hiba esetén üres térkép.
+     */
+    suspend fun getTypeNames(): Map<String, String> = withContext(Dispatchers.IO) {
+        if (!tokenStore.hasToken()) return@withContext emptyMap()
+        val body = "{}".toRequestBody(jsonBody)
+        val paths = listOf("ProfileApi/GetAlapadatok", "GetAlapadatok", "OfferRequestApi/GetAlapadatok")
+        for (path in paths) {
+            val result: Map<String, String>? = try {
+                client.newCall(
+                    Request.Builder()
+                        .url(baseUrl + path)
+                        .header("User-Agent", USER_AGENT)
+                        .header("UserTokenXml", tokenStore.getToken()!!)
+                        .post(body)
+                        .build()
+                ).execute().use { r ->
+                    if (!r.isSuccessful) null
+                    else collectTypeNames(json.parseToJsonElement(r.body!!.string()), mutableMapOf())
+                }
+            } catch (_: Exception) {
+                null
+            }
+            if (!result.isNullOrEmpty()) return@withContext result
+        }
+        emptyMap()
+    }
+
+    private fun collectTypeNames(
+        el: kotlinx.serialization.json.JsonElement,
+        out: MutableMap<String, String>
+    ): Map<String, String> {
+        when (el) {
+            is JsonObject -> {
+                fun s(k: String) = (el[k] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    ?.takeIf { it.isNotBlank() && it != "null" }
+                val kod = s("Kod") ?: s("kod") ?: s("Azonosito")
+                val nev = s("Nev") ?: s("nev")
+                if (kod != null && nev != null) out[kod] = nev
+                el.values.forEach { collectTypeNames(it, out) }
+            }
+            is kotlinx.serialization.json.JsonArray -> el.forEach { collectTypeNames(it, out) }
+            else -> {}
+        }
+        return out
     }
 
     private suspend fun reloginIfPossible(): Boolean {
