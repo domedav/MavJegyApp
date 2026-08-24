@@ -10,7 +10,7 @@ class TokenStore(private val context: Context) {
     private val prefs: SharedPreferences by lazy {
         try {
             createSecure(context)
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             // sérült keystore / prefs: töröljük és újrapróbáljuk
             context.getSharedPreferences("mavjegy_secure_prefs", Context.MODE_PRIVATE)
                 .edit().clear().commit()

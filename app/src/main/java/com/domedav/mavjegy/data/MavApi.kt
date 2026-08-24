@@ -132,7 +132,7 @@ class MavApi(private val tokenStore: TokenStore) {
             if (!it.isSuccessful) error("GetPreviousPurchases failed: HTTP ${it.code}")
             val root = json.parseToJsonElement(it.body!!.string()).jsonObject
             val arr = root["previousPurchases"]?.jsonArray
-            arr?.mapNotNull { el ->
+            (arr?.mapNotNull { el ->
                 val o = el as? JsonObject ?: return@mapNotNull null
                 Purchase(
                     id = o.str("id") ?: return@mapNotNull null,
@@ -145,7 +145,7 @@ class MavApi(private val tokenStore: TokenStore) {
                     amount = o.priceAmount(),
                     currency = o.currencyKey()
                 )
-            } ?: emptyList()
+            } ?: emptyList()).distinctBy { it.id }
         }
     }
 

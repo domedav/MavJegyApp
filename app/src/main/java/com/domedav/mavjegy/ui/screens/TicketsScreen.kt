@@ -171,8 +171,8 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
         label = "refreshSpin"
     )
 
-    val valid = purchases.filter { it.status == "Ervenyes" }
-    val expired = purchases.filter { it.status != "Ervenyes" }
+    val valid = purchases.filter { it.status.trim().equals("Ervenyes", ignoreCase = true) }
+    val expired = purchases.filter { !it.status.trim().equals("Ervenyes", ignoreCase = true) }
 
     Scaffold(
         topBar = {
@@ -227,7 +227,7 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
 
 @Composable
 private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
-    val isValid = purchase.status == "Ervenyes"
+    val isValid = purchase.status.trim().equals("Ervenyes", ignoreCase = true)
     Card(
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(

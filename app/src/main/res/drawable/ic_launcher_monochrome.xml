@@ -1,12 +1,17 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="1024" android:viewportHeight="1024">
-    <path android:pathData="M372,220 h280 a80,80 0 0 1 80,80 v260 a80,80 0 0 1 -80,80 h-280 a80,80 0 0 1 -80,-80 v-260 a80,80 0 0 1 80,-80 z"
-        android:strokeColor="#FFFFFF" android:strokeWidth="26"
-        android:fillColor="#00000000"/>
-    <path android:pathData="M378,280 h268 a36,36 0 0 1 36,36 v48 a36,36 0 0 1 -36,36 h-268 a36,36 0 0 1 -36,-36 v-48 a36,36 0 0 1 36,-36 z"
-        android:strokeColor="#FFFFFF" android:strokeWidth="26"
-        android:fillColor="#00000000"/>
-    <path android:pathData="M256,760 h512 a24,24 0 0 1 24,24 v0 a24,24 0 0 1 -24,24 h-512 a24,24 0 0 1 -24,-24 v0 a24,24 0 0 1 24,-24 z"
-        android:fillColor="#FFFFFF"/>
-    </vector>
+    <!-- gőzös körvonalak -->
+    <path android:pathData="M190,300 h56 v90 h-56 z M70,390 a60,60 0 0 1 60,-60 h300 a60,60 0 0 1 60,60 v70 a60,60 0 0 1 -60,60 h-300 a60,60 0 0 1 -60,-60 z"
+        android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
+    <path android:pathData="M410,270 h170 v380 h-170 z M486,310 h94 v110 h-94 z"
+        android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
+    <path android:pathData="M210,588 a52,52 0 1 0 0.01,0z M340,588 a52,52 0 1 0 0.01,0z M575,588 a52,52 0 1 0 0.01,0z"
+        android:strokeColor="#FFFFFF" android:strokeWidth="22" android:fillColor="#00000000"/>
+    <!-- perjel -->
+    <path android:pathData="M740,250 L800,250 L690,750 L630,750 Z"
+        android:strokeColor="#FFFFFF" android:strokeWidth="24" android:fillColor="#00000000"/>
+    <!-- busz hátulja -->
+    <path android:pathData="M830,300 h200 v420 h-200 z M858,350 h144 v130 h-144 z"
+        android:strokeColor="#FFFFFF" android:strokeWidth="26" android:fillColor="#00000000"/>
+</vector>

@@ -1,6 +1,6 @@
 package com.domedav.mavjegy.util
 
-import android.util.Base64
+import java.util.Base64
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -19,7 +19,7 @@ object TicketDecoder {
 
     fun decodeSerialized(b64: String): DecodedTicket? {
         return try {
-            val compressed = Base64.decode(b64, Base64.NO_WRAP)
+            val compressed = Base64.getDecoder().decode(b64)
             val inflater = Inflater(true)
             inflater.setInput(compressed)
             val out = ByteArrayOutputStream()
@@ -44,13 +44,24 @@ object TicketDecoder {
 
     private fun findKod(obj: JsonObject): String? {
         obj.forEach { (key, v) ->
-            when {
-                key == "Kod" && v is JsonPrimitive && v.content.isNotBlank() -> return v.content
-                v is JsonObject -> findKod(v)?.let { return it }
+            if (key == "Kod" && v is JsonPrimitive && !v.isStringNullBlank()) return v.content
+            when (v) {
+                is JsonObject -> findKod(v)?.let { return it }
+                is kotlinx.serialization.json.JsonArray ->
+                    v.forEach { e ->
+                        when (e) {
+                            is JsonObject -> findKod(e)?.let { return it }
+                            else -> {}
+                        }
+                    }
+                else -> {}
             }
         }
         return null
     }
+
+    private fun JsonPrimitive.isStringNullBlank(): Boolean =
+        !isString || content.isBlank() || content == "null"
 
     private fun JsonPrimitive.contentOrNullSafe(): String? =
         content.takeIf { it.isNotBlank() }

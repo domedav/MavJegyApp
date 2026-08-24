@@ -41,15 +41,19 @@ class MainActivity : ComponentActivity() {
         val api = app.api
         setContent {
             MavJegyTheme {
-                var loggedIn by remember {
-                    mutableStateOf(tokenStore.hasToken() || tokenStore.hasCredentials())
+                var loggedIn by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    loggedIn = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        runCatching { tokenStore.hasToken() || tokenStore.hasCredentials() }
+                            .getOrElse { false }
+                    }
                 }
                 if (loggedIn) {
                     LaunchedEffect(Unit) {
                         val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             runCatching { api.ensureSession() }.getOrElse { false }
                         }
-                        if (!ok && !tokenStore.hasToken()) loggedIn = false
+                        if (!ok && !tokenStore.hasCredentials()) loggedIn = false
                     }
                     AppRoot(api)
                 } else {
