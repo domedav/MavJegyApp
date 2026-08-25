@@ -126,6 +126,70 @@ object OfflineStore {
         }
     }
 
+    // --- Szerver jegykép: egyszer lekérve MENTJÜK (hash-dedup + JPEG kompresszió) ---
+
+    private fun jegykepDir(context: Context) = dir(context, "jegykep_cache")
+
+    private fun jegykepIndexFile(context: Context) = File(context.filesDir, "jegykep_index.json")
+
+    /** Kompresszió: max 1600 px hosszabb oldal, JPEG minőség csökkentve 2 MB-ig */
+    private fun compressImage(raw: ByteArray): ByteArray? {
+        val bmp = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size) ?: return null
+        var scaled = bmp
+        val maxDim = 1600
+        val largest = maxOf(bmp.width, bmp.height)
+        if (largest > maxDim) {
+            val scale = maxDim.toFloat() / largest
+            scaled = Bitmap.createScaledBitmap(
+                bmp,
+                (bmp.width * scale).toInt().coerceAtLeast(1),
+                (bmp.height * scale).toInt().coerceAtLeast(1),
+                true
+            )
+        }
+        var quality = 85
+        var data: ByteArray
+        do {
+            val bos = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, quality, bos)
+            data = bos.toByteArray()
+            quality -= 10
+        } while (data.size > MAX_PHOTO_BYTES && quality >= 30)
+        return data
+    }
+
+    fun saveServerJegyKep(context: Context, purchaseId: String, raw: ByteArray): String? {
+        return try {
+            val compressed = compressImage(raw) ?: return null
+            val hash = sha256(compressed)
+            val target = File(jegykepDir(context), "$hash.jpg")
+            if (!target.exists() || target.length() == 0L) {
+                target.parentFile?.let { if (!it.exists()) it.mkdirs() }
+                target.writeBytes(compressed)
+            }
+            // purchaseId -> hash index
+            val idx = jegykepIndexFile(context)
+            val obj = try {
+                JSONObject(idx.takeIf { it.exists() }?.readText() ?: "{}")
+            } catch (_: Exception) { JSONObject() }
+            obj.put(purchaseId, hash)
+            idx.writeText(obj.toString())
+            hash
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun loadServerJegyKep(context: Context, purchaseId: String): ByteArray? = try {
+        val idx = jegykepIndexFile(context)
+        val obj = JSONObject(idx.takeIf { it.exists() }?.readText() ?: "{}")
+        val hash = obj.optString(purchaseId, "").takeIf { it.isNotBlank() } ?: return null
+        val f = File(jegykepDir(context), "$hash.jpg")
+        if (f.exists()) f.readBytes() else null
+    } catch (_: Exception) {
+        null
+    }
+
     // --- Szerver jegyképből dekódolt vonalkód-szöveg (kicsi, gyors, offline) ---
     private fun serverBarcodeFile(context: Context, purchaseId: String) =
         File(dir(context, "server_barcode_cache"), purchaseId.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".txt")

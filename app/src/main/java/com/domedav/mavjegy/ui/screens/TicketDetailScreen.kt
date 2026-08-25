@@ -5,6 +5,12 @@ package com.domedav.mavjegy.ui.screens
 import android.app.Activity
 import android.graphics.BitmapFactory
 import android.view.WindowManager
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,8 +63,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -292,14 +301,47 @@ fun TicketDetailScreen(
                 // Ez érkezik meg először cache-ből, majd frissül a hálózatról;
                 // ha nem elérhető, marad a serialized adatokból épített fallback.
                 var serverBarcodeText by remember(purchase.id) { mutableStateOf<String?>(null) }
-                LaunchedEffect(purchase.id, expired) {
-                    if (expired || serialized.isNullOrBlank()) return@LaunchedEffect
-                    val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito
-                    val result = runCatching {
-                        api.getServerTicketBarcode(purchase.id, bizAzon, context)
-                    }.getOrNull() ?: return@LaunchedEffect
-                    if (!result.text.isNullOrBlank()) {
-                        serverBarcodeText = result.text
+                var serverImageBitmap by remember(purchase.id) {
+                    mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+                }
+                var loadingServerImage by remember(purchase.id) { mutableStateOf(false) }
+                var showServerImage by remember(purchase.id) { mutableStateOf(false) }
+                var serverFetchStarted by remember(purchase.id) { mutableStateOf(false) }
+
+                fun requestServerJegyKep() {
+                    if (serverFetchStarted || expired) return
+                    serverFetchStarted = true
+                    loadingServerImage = serverImageBitmap == null && showServerImage
+                    scope.launch {
+                        val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito
+                        val result = runCatching {
+                            api.getServerJegyKep(purchase.id, bizAzon, context)
+                        }.getOrNull()
+                        loadingServerImage = false
+                        val bytes = result?.imageBytes
+                        val bmp = bytes?.let {
+                            withContext(Dispatchers.Default) {
+                                runCatching {
+                                    BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap()
+                                }.getOrNull()
+                            }
+                        }
+                        if (bmp != null) serverImageBitmap = bmp
+                        if (!result?.barcodeText.isNullOrBlank()) {
+                            serverBarcodeText = result!!.barcodeText
+                        }
+                        if (bmp == null && showServerImage) {
+                            // csak ha a felhasználó épp képet kért és nem jött össze
+                            snackbarHostState.showSnackbar(result?.error ?: "Jegykép nem elérhető")
+                            showServerImage = false
+                        }
+                    }
+                }
+
+                // Első nyitásra háttérben letölti + MENTI a jegyképet (utána offline is megvan)
+                LaunchedEffect(purchase.id, serialized, expired) {
+                    if (!expired && !serialized.isNullOrBlank()) {
+                        requestServerJegyKep()
                     }
                 }
 
@@ -334,21 +376,29 @@ fun TicketDetailScreen(
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onDoubleTap = {
-                                    // Dupla koppintás: nézet visszaállítása alaphelyzetbe
-                                    scale = 1f
-                                    offsetX = 0f
-                                    offsetY = topAnchoredOffsetY
-                                    ViewerPrefs.save(context, 1f, topAnchoredOffsetY / displaySize)
+                                    if (showServerImage) {
+                                        // vissza az Aztec-re
+                                        showServerImage = false
+                                    } else if (serverImageBitmap != null) {
+                                        showServerImage = true
+                                    } else {
+                                        // on-demand letöltés, majd megjelenítés
+                                        requestServerJegyKep()
+                                        if (serverFetchStarted && !loadingServerImage) {
+                                            // már fut a háttérletöltés – jelzés, hogy kép jön
+                                            showServerImage = true
+                                        }
+                                    }
                                 }
                             )
                         }
-                        .pointerInput(displaySize, zoneInnerW) {
+                        .pointerInput(displaySize, zoneInnerW, showServerImage, zoneW) {
+                            val baseForMode = if (showServerImage) zoneW else displaySize
                             detectTransformGestures { _, pan, zoom, _ ->
-                                // Agresszív kicsinyítés: egészen pici glyph-ig zoomolhatunk
                                 scale = (scale * zoom).coerceIn(0.15f, 5f)
                                 val mpx =
                                     if (scale > 1f) {
-                                        ((displaySize * scale - zoneInnerW) / 2f).coerceAtLeast(0f)
+                                        ((baseForMode * scale - zoneInnerW) / 2f).coerceAtLeast(0f)
                                     } else 0f
                                 offsetX = if (scale > 1f) {
                                     (offsetX + pan.x).coerceIn(-mpx, mpx)
@@ -402,33 +452,76 @@ fun TicketDetailScreen(
                         }
 
                         else -> {
-                            val bitmap = barcodeBitmap
+                            val simg = serverImageBitmap
                             when {
-                                bitmap != null -> Image(
-                                bitmap = bitmap,
-                                contentDescription = "Vonalkód",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .aspectRatio(1f)
-                                    .width(with(density) { displaySize.toDp() })
-                                    .graphicsLayer {
-                                        scaleX = scale
-                                        scaleY = scale
-                                        translationX = offsetX
-                                        translationY = offsetY ?: 0f
+                            // SZERVER JEGYKÉP (dupla koppintással előhívott fallback)
+                            showServerImage && simg != null -> {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.TopCenter
+                                ) {
+                                    Image(
+                                        bitmap = simg,
+                                        contentDescription = "Szerver jegykép",
+                                        contentScale = ContentScale.FillWidth,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .graphicsLayer {
+                                                scaleX = scale
+                                                scaleY = scale
+                                                translationX = offsetX
+                                                translationY = offsetY ?: 0f
+                                            }
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .padding(top = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Szerver jegykép – dupla koppintás: vissza",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                        )
                                     }
-                            )
+                                }
+                            }
 
-                            generatingBarcode -> CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                            )
+                            showServerImage && loadingServerImage -> WavyLoadingIndicator()
 
-                            else -> Text(
-                                text = "Vonalkód nem elérhető",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            else -> {
+                                val bitmap = barcodeBitmap
+                                when {
+                                    bitmap != null -> Image(
+                                    bitmap = bitmap,
+                                    contentDescription = "Vonalkód",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .aspectRatio(1f)
+                                        .width(with(density) { displaySize.toDp() })
+                                        .graphicsLayer {
+                                            scaleX = scale
+                                            scaleY = scale
+                                            translationX = offsetX
+                                            translationY = offsetY ?: 0f
+                                        }
+                                )
+
+                                generatingBarcode -> CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                )
+
+                                else -> Text(
+                                    text = "Vonalkód nem elérhető",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                }
+                            }
                             }
                         }
                     }
@@ -787,6 +880,50 @@ private fun formatBirthDate(raw: String): String {
 
 private fun titleFor(details: TicketDetails?): String? =
     details?.ajanlatNev?.takeIf { it.isNotBlank() }
+
+@Composable
+private fun WavyLoadingIndicator(modifier: Modifier = Modifier) {
+    // Material Expressive stílusú hullámos kör-indikátor
+    val color = MaterialTheme.colorScheme.primary
+    val twoPi = (2.0 * kotlin.math.PI).toFloat()
+    val infinite = rememberInfiniteTransition(label = "wavy")
+    val phase by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = twoPi,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "phase"
+    )
+    val progress by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing)),
+        label = "progress"
+    )
+
+    Canvas(modifier = modifier.size(56.dp)) {
+        val stroke = 3.5.dp.toPx()
+        val radius = size.minDimension / 2f - stroke * 2f
+        val amp = stroke * 1.15f
+        val sweepMax = twoPi * 0.72f
+        val start = (progress * twoPi * 2f) % twoPi
+        val path = Path()
+        var first = true
+        var angle = start
+        while (angle <= start + sweepMax) {
+            val wave = kotlin.math.sin(angle / twoPi * 6f * twoPi + phase)
+            val rr = radius + amp * wave
+            val x = center.x + rr * kotlin.math.cos(angle)
+            val y = center.y + rr * kotlin.math.sin(angle)
+            if (first) { path.moveTo(x, y); first = false } else path.lineTo(x, y)
+            angle += 0.055f
+        }
+        drawPath(
+            path,
+            color = color,
+            style = Stroke(width = stroke, cap = StrokeCap.Round)
+        )
+    }
+}
 
 @Composable
 private fun OwnerDetailsDialog(

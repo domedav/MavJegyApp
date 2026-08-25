@@ -57,9 +57,10 @@ data class PassOwnerData(
     val azonosito: String? = null
 )
 
-/** A szerver jegyképéből kinyert, hivatalos vonalkód-tartalom */
-data class ServerBarcodeResult(
-    val text: String?,
+/** A szerver jegyképe (fallback nézethez) + a képből dekódolt hivatalos vonalkód-tartalom */
+data class ServerJegyképResult(
+    val imageBytes: ByteArray?,
+    val barcodeText: String?,
     val fromCache: Boolean = false,
     val error: String? = null
 )
@@ -553,28 +554,40 @@ class MavApi(private val tokenStore: TokenStore) {
     }
 
     /**
-     * A SZERVER-OLDALI jegykép letöltése és a KÉPEN LÉVŐ VONALKÓD dekódolása.
-     * Ez az egyetlen hivatalos, scannelhető bérlet-kód – ezt kódoljuk újra lokálisan,
-     * tetszőleges méretű Aztec-ként. Az eredmény (kis szöveg) offline cache-be kerül.
+     * A SZERVER-OLDALI jegykép: első lekérés után MENTJÜK (hash-dedup + kompresszió),
+     * és a KÉPEN LÉVŐ VONALKÓDOT dekódoljuk – ez az egyetlen hivatalos, scannelhető
+     * bérlet-kód, amit lokálisan Aztec-ként is megjelenítünk.
      */
-    suspend fun getServerTicketBarcode(
+    suspend fun getServerJegyKep(
         purchaseId: String,
         bizonylatTechnikaiAzonosito: String?,
         context: android.content.Context
-    ): ServerBarcodeResult = withContext(Dispatchers.IO) {
-        // 1. Offline cache – ha megvan a dekódolt kód, azonnal megy
-        OfflineStore.loadServerBarcode(context, purchaseId)?.let {
-            return@withContext ServerBarcodeResult(it, fromCache = true)
+    ): ServerJegyképResult = withContext(Dispatchers.IO) {
+        // 1. Disk cache: kép + (ha van) már dekódolt kódszöveg
+        val cachedImage = OfflineStore.loadServerJegyKep(context, purchaseId)
+        val cachedText = OfflineStore.loadServerBarcode(context, purchaseId)
+        if (cachedImage != null) {
+            var text = cachedText
+            if (text.isNullOrBlank()) {
+                // képből utólagos dekódolás
+                val bmp = android.graphics.BitmapFactory.decodeByteArray(cachedImage, 0, cachedImage.size)
+                text = bmp?.let { com.domedav.mavjegy.util.BarcodeImageDecoder.decode(it) }
+                if (!text.isNullOrBlank()) OfflineStore.saveServerBarcode(context, purchaseId, text)
+            }
+            return@withContext ServerJegyképResult(cachedImage, text, fromCache = true)
         }
 
         if (bizonylatTechnikaiAzonosito.isNullOrBlank()) {
-            return@withContext ServerBarcodeResult(null, error = "Nincs bizonylat-azonosító")
+            return@withContext ServerJegyképResult(null, cachedText, error = "Nincs bizonylat-azonosító")
         }
         if (tokenStore.isDemo()) {
-            return@withContext ServerBarcodeResult(null, error = "Demó módban nincs szerver jegykép")
+            return@withContext ServerJegyképResult(null, cachedText, error = "Demó módban nincs szerver jegykép")
         }
         if (!ensureVimSession()) {
-            return@withContext ServerBarcodeResult(null, error = "VIM bejelentkezés sikertelen (csak magyar IP-ről elérhető)")
+            return@withContext ServerJegyképResult(
+                null, cachedText,
+                error = "VIM bejelentkezés sikertelen (magyar IP szükséges)"
+            )
         }
 
         val body = buildJsonObject {
@@ -598,30 +611,32 @@ class MavApi(private val tokenStore: TokenStore) {
             ).execute().use { r ->
                 val ct = r.header("Content-Type") ?: ""
                 if (!r.isSuccessful || !ct.contains("json")) {
-                    return@withContext ServerBarcodeResult(null, error = "GetJegykep blokkolva/hibás (HTTP ${r.code})")
+                    return@withContext ServerJegyképResult(
+                        null, cachedText,
+                        error = "GetJegykep blokkolva/hibás (HTTP ${r.code})"
+                    )
                 }
                 val root = json.parseToJsonElement(r.body!!.string())
                 val b64 = findStringKey(root, "Jegykep")
                 if (b64.isNullOrBlank()) {
-                    return@withContext ServerBarcodeResult(
-                        null,
+                    return@withContext ServerJegyképResult(
+                        null, cachedText,
                         error = extractServerMessages(root) ?: "A szerver nem adott vissza jegyképet"
                     )
                 }
                 val bytes = java.util.Base64.getDecoder().decode(b64)
-                val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    ?: return@withContext ServerBarcodeResult(null, error = "Jegykép dekódolása sikertelen")
-                val text = com.domedav.mavjegy.util.BarcodeImageDecoder.decode(bmp)
+                OfflineStore.saveServerJegyKep(context, purchaseId, bytes)
+
+                var text = OfflineStore.loadServerBarcode(context, purchaseId)
                 if (text.isNullOrBlank()) {
-                    return@withContext ServerBarcodeResult(null, error = "Nem találtunk vonalkódot a jegyképben")
+                    val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    text = bmp?.let { com.domedav.mavjegy.util.BarcodeImageDecoder.decode(it) }
+                    if (!text.isNullOrBlank()) OfflineStore.saveServerBarcode(context, purchaseId, text)
                 }
-                OfflineStore.saveServerBarcode(context, purchaseId, text)
-                ServerBarcodeResult(text)
+                ServerJegyképResult(bytes, text)
             }
         } catch (e: Exception) {
-            OfflineStore.loadServerBarcode(context, purchaseId)?.let {
-                ServerBarcodeResult(it, fromCache = true)
-            } ?: ServerBarcodeResult(null, error = e.message ?: "Hálózati hiba")
+            ServerJegyképResult(null, cachedText, error = e.message ?: "Hálózati hiba")
         }
     }
 
