@@ -309,9 +309,14 @@ fun TicketDetailScreen(
                 var serverFetchStarted by remember(purchase.id) { mutableStateOf(false) }
 
                 fun requestServerJegyKep() {
-                    if (serverFetchStarted || expired) return
+                    if (loadingServerImage) return
+                    if (serverFetchStarted && serverImageBitmap == null) {
+                        // korábbi próbálkozás sikertelen volt -> engedélyezzük az újrapróbálást
+                        serverFetchStarted = false
+                    }
+                    if (serverFetchStarted) return
                     serverFetchStarted = true
-                    loadingServerImage = serverImageBitmap == null && showServerImage
+                    loadingServerImage = true
                     scope.launch {
                         val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito
                         val result = runCatching {
@@ -330,10 +335,14 @@ fun TicketDetailScreen(
                         if (!result?.barcodeText.isNullOrBlank()) {
                             serverBarcodeText = result!!.barcodeText
                         }
-                        if (bmp == null && showServerImage) {
-                            // csak ha a felhasználó épp képet kért és nem jött össze
-                            snackbarHostState.showSnackbar(result?.error ?: "Jegykép nem elérhető")
-                            showServerImage = false
+                        if (bmp == null) {
+                            // sikertelen: engedjük az újrapróbálást, és ha kép-nézetben voltunk,
+                            // szóljunk + térjünk vissza Aztec-re
+                            serverFetchStarted = false
+                            if (showServerImage) {
+                                snackbarHostState.showSnackbar(result?.error ?: "Jegykép nem elérhető")
+                                showServerImage = false
+                            }
                         }
                     }
                 }
@@ -376,17 +385,13 @@ fun TicketDetailScreen(
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onDoubleTap = {
-                                    if (showServerImage) {
-                                        // vissza az Aztec-re
-                                        showServerImage = false
-                                    } else if (serverImageBitmap != null) {
-                                        showServerImage = true
-                                    } else {
-                                        // on-demand letöltés, majd megjelenítés
-                                        requestServerJegyKep()
-                                        if (serverFetchStarted && !loadingServerImage) {
-                                            // már fut a háttérletöltés – jelzés, hogy kép jön
+                                    when {
+                                        showServerImage -> showServerImage = false
+                                        serverImageBitmap != null -> showServerImage = true
+                                        else -> {
+                                            // töltőnézet + on-demand letöltés (siker után kép jelenik meg)
                                             showServerImage = true
+                                            requestServerJegyKep()
                                         }
                                     }
                                 }
@@ -1136,12 +1141,8 @@ private fun EditPassOwnerDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                // Dátum: selector, nem input box
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showDatePicker = true }
-                ) {
+                // Dátum: selector, nem input box – átfedő kattintási réteggel
+                Box {
                     OutlinedTextField(
                         value = birthDate.ifBlank { "" },
                         onValueChange = {},
@@ -1150,6 +1151,11 @@ private fun EditPassOwnerDialog(
                         placeholder = { Text("Válassz dátumot") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { showDatePicker = true }
                     )
                 }
                 OutlinedTextField(

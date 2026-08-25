@@ -416,9 +416,9 @@ class MavApi(private val tokenStore: TokenStore) {
     }
 
     /**
-     * Regisztráció – POST {VIM}/Regisztracio (az eredeti app RequestGetRegistration-ja).
-     * Body: {Nyelv, RegisztraciosAdat:{EmailCim, Jelszo, VezetekNev, KeresztNev, SzuletesiDatum}, UAID}
-     * (Szolgaltato/Token/OneTimeCode az eredeti appban is üres -> Gson kihagyja.)
+     * Regisztráció – IK API ProfileApi/UserRegistration (valóban működő végpont).
+     * Kötelező: UserEmail, KeresztNev, VezetekNev, Password, AdatvedelmiNyilatkozat, SzuletesiDatum.
+     * Hiba esetén JSON {message} jön.
      */
     suspend fun register(
         email: String,
@@ -430,68 +430,61 @@ class MavApi(private val tokenStore: TokenStore) {
         if (tokenStore.isDemo()) {
             return@withContext Result.success(null)
         }
-        if (!tokenStore.hasUaid()) tokenStore.setUaid(java.util.UUID.randomUUID().toString())
-
-        val birthEpochSec = try {
-            java.time.LocalDate.parse(birthDateIso.take(10))
-                .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond().toString()
-        } catch (_: Exception) {
-            null
-        }
 
         val body = buildJsonObject {
-            put("Nyelv", "hu")
-            put("RegisztraciosAdat", buildJsonObject {
-                put("EmailCim", email)
-                put("Jelszo", password)
-                put("VezetekNev", lastName)
-                put("KeresztNev", firstName)
-                if (birthEpochSec != null) put("SzuletesiDatum", birthEpochSec)
-            })
-            put("UAID", tokenStore.getUaid())
+            put("UserEmail", email)
+            put("KeresztNev", firstName)
+            put("VezetekNev", lastName)
+            put("Password", password)
+            put("AdatvedelmiNyilatkozat", true)
+            put("SzuletesiDatum", birthDateIso.take(10))
         }.toString().toRequestBody(jsonBody)
 
         runCatching {
             client.newCall(
                 Request.Builder()
-                    .url(vimBaseUrl + "Regisztracio")
+                    .url(baseUrl + "ProfileApi/UserRegistration")
                     .header("User-Agent", USER_AGENT)
                     .post(body)
                     .build()
             ).execute().use { r ->
-                val root = json.parseToJsonElement(r.body!!.string())
-                val ok = findStringKey(root, "Valasz") == "true"
-                if (!ok) error(extractServerMessages(root) ?: "Sikertelen regisztráció (HTTP ${r.code})")
+                val raw = r.body!!.string()
+                if (!r.isSuccessful) {
+                    val msg = runCatching {
+                        json.parseToJsonElement(raw).jsonObject["message"]?.jsonPrimitive?.content
+                    }.getOrNull()
+                    error(msg ?: "Sikertelen regisztráció (HTTP ${r.code})")
+                }
                 null // siker: a szerver emailben küldi a megerősítést
             }
         }
     }
 
-    /** Elfelejtett jelszó – POST {VIM}/GetUjJelszo, a szerver új jelszót küld emailben. */
+    /** Elfelejtett jelszó – IK API ProfileApi/ForgottenPasswordRequest (200 üres = siker). */
     suspend fun forgotPassword(email: String): Result<String?> = withContext(Dispatchers.IO) {
         if (tokenStore.isDemo()) {
             return@withContext Result.success("Demó mód – valós emailt nem küldünk")
         }
-        if (!tokenStore.hasUaid()) tokenStore.setUaid(java.util.UUID.randomUUID().toString())
 
-        val body = buildJsonObject {
-            put("FelhasznaloAzonosito", email)
-            put("Nyelv", "hu")
-            put("UAID", tokenStore.getUaid())
-        }.toString().toRequestBody(jsonBody)
+        val body = buildJsonObject { put("userEmail", email) }
+            .toString().toRequestBody(jsonBody)
 
         runCatching {
             client.newCall(
                 Request.Builder()
-                    .url(vimBaseUrl + "GetUjJelszo")
+                    .url(baseUrl + "ProfileApi/ForgottenPasswordRequest")
                     .header("User-Agent", USER_AGENT)
                     .post(body)
                     .build()
             ).execute().use { r ->
-                val root = json.parseToJsonElement(r.body!!.string())
-                val ok = findStringKey(root, "Valasz") == "true"
-                if (!ok) error(extractServerMessages(root) ?: "Sikertelen kérés (HTTP ${r.code})")
-                null
+                val raw = r.body!!.string()
+                if (!r.isSuccessful) {
+                    val msg = runCatching {
+                        json.parseToJsonElement(raw).jsonObject["message"]?.jsonPrimitive?.content
+                    }.getOrNull()
+                    error(msg ?: "Sikertelen kérés (HTTP ${r.code})")
+                }
+                null // 200 üres válasz = az új jelszó elment az email címre
             }
         }
     }

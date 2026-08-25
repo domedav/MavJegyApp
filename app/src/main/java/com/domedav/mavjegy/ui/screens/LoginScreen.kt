@@ -543,11 +543,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     androidx.compose.material3.DatePicker(state = regDateState)
                                 }
                             }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable(enabled = !loading) { showRegDatePicker = true }
-                            ) {
+                            Box {
                                 OutlinedTextField(
                                     value = regBirthDate,
                                     onValueChange = {},
@@ -558,6 +554,12 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     enabled = !loading,
                                     shape = FieldShape,
                                     modifier = Modifier.fillMaxWidth()
+                                )
+                                // Átfedő kattintási réteg: ez nyitja a date pickert
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .clickable(enabled = !loading) { showRegDatePicker = true }
                                 )
                             }
                             Spacer(modifier = Modifier.height(12.dp))
