@@ -621,22 +621,21 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Sikeres művelet (regisztráció / jelszó-kérés) infó snackbar
-                    info?.let { msg ->
-                        com.domedav.mavjegy.ui.components.DismissibleSnackbar(
-                            message = msg,
-                            onDismiss = { info = null },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    // Sikeres művelet (regisztráció / jelszó-kérés) – nem error színű
+                    val snackbar = com.domedav.mavjegy.ui.components.LocalSnackbar.current
+                    LaunchedEffect(info) {
+                        info?.let {
+                            snackbar.show(it, isError = false)
+                            info = null
+                        }
                     }
 
-                    // Saját, eltűntethető hiba-snackbar (swipe balra/jobbra vagy lehúzás)
-                    error?.let { err ->
-                        com.domedav.mavjegy.ui.components.DismissibleSnackbar(
-                            message = err,
-                            onDismiss = { error = null },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    // Hiba snackbar – error színű
+                    LaunchedEffect(error) {
+                        error?.let {
+                            snackbar.show(it, isError = true)
+                            error = null
+                        }
                     }
                 }
             }

@@ -255,19 +255,16 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
 
     val valid = purchases
 
+    // Hiba snackbar: globális overlay (5 mp után eltűnik, le/bal/jobb swipe)
+    val snackbar = com.domedav.mavjegy.ui.components.LocalSnackbar.current
+    LaunchedEffect(error) {
+        error?.let {
+            snackbar.show("Hiba: $it", isError = true)
+            error = null
+        }
+    }
+
     Scaffold(
-        snackbarHost = {
-            // Saját, eltűntethető snackbar: swipe balra/jobbra vagy lehúzás
-            Box(modifier = Modifier.fillMaxWidth()) {
-                error?.let { err ->
-                    com.domedav.mavjegy.ui.components.DismissibleSnackbar(
-                        message = "Hiba: $err",
-                        onDismiss = { error = null },
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                }
-            }
-        },
         topBar = {
             Row(
                 modifier = Modifier

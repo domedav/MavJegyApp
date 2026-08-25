@@ -7,17 +7,18 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -30,38 +31,55 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 /**
- * Eltűntethető hiba-snackbar: jobbra-balra húzással VAGY lehúzással eltuñik.
- * Material 3 színeket használ (errorContainer / onErrorContainer).
+ * Eltűntethető snackbar: jobbra-balra húzással VAGY lehúzással eltűnik.
+ * Felfelé NEM húzható (offsetY >= 0). 5 mp után automatikusan eltűnik.
+ * Szín: error (hiba) vagy primaryContainer (info/siker).
  */
 @Composable
 fun DismissibleSnackbar(
     message: String,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isError: Boolean = true
 ) {
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
     var visible by remember(message) { mutableStateOf(true) }
 
+    // 5 mp után automatikus eltűnés
+    LaunchedEffect(Unit) {
+        delay(5000)
+        if (visible) {
+            visible = false
+            onDismiss()
+        }
+    }
+
     if (!visible) return
 
-    val dragState = rememberDraggableState { delta ->
-        offsetX += delta
-    }
+    val containerColor = if (isError) MaterialTheme.colorScheme.errorContainer
+        else MaterialTheme.colorScheme.inverseSurface
+    val contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer
+        else MaterialTheme.colorScheme.inverseOnSurface
+    val icon = if (isError) Icons.Rounded.ErrorOutline else Icons.Rounded.Info
+
+    val dragStateX = rememberDraggableState { delta -> offsetX += delta }
+    // Felfelé nem mehet: offsetY csak nem-negatív lehet
+    val dragStateY = rememberDraggableState { delta -> offsetY = (offsetY + delta).coerceAtLeast(0f) }
 
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .fillMaxWidth(0.94f)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            color = containerColor,
+            contentColor = contentColor,
             tonalElevation = 4.dp,
             shadowElevation = 4.dp,
             modifier = Modifier
@@ -71,7 +89,7 @@ fun DismissibleSnackbar(
                 }
                 .draggable(
                     orientation = Orientation.Horizontal,
-                    state = dragState,
+                    state = dragStateX,
                     onDragStopped = {
                         if (abs(offsetX) > 220f) {
                             visible = false
@@ -83,7 +101,7 @@ fun DismissibleSnackbar(
                 )
                 .draggable(
                     orientation = Orientation.Vertical,
-                    state = rememberDraggableState { delta -> offsetY += delta },
+                    state = dragStateY,
                     onDragStopped = {
                         if (offsetY > 140f) {
                             visible = false
@@ -102,7 +120,7 @@ fun DismissibleSnackbar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.Rounded.ErrorOutline,
+                    icon,
                     contentDescription = null,
                     modifier = Modifier.padding(end = 10.dp)
                 )

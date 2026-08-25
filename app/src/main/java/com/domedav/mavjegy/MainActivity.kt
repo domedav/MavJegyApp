@@ -52,6 +52,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,6 +63,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
+import com.domedav.mavjegy.ui.components.LocalSnackbar
+import com.domedav.mavjegy.ui.components.SnackbarHost
+import com.domedav.mavjegy.ui.components.SnackbarState
 import com.domedav.mavjegy.ui.screens.BuyScreen
 import com.domedav.mavjegy.ui.screens.LoginScreen
 import com.domedav.mavjegy.ui.screens.TicketDetailScreen
@@ -78,7 +82,9 @@ class MainActivity : ComponentActivity() {
         val tokenStore = app.tokenStore
         val api = app.api
         setContent {
-            MavJegyTheme(dynamicColor = true) {
+            val snackbarState = remember { SnackbarState() }
+            CompositionLocalProvider(LocalSnackbar provides snackbarState) {
+                MavJegyTheme(dynamicColor = true) {
                 // Ha mégsem álló a tájolás, szóljon az app, hogy forgatás
                 val configuration = androidx.compose.ui.platform.LocalConfiguration.current
                 if (configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
@@ -107,6 +113,7 @@ class MainActivity : ComponentActivity() {
                         onLoggedIn = { loggedIn = true }
                     )
                 }
+                SnackbarHost()
             }
         }
     }
@@ -325,10 +332,11 @@ fun AppRoot(api: MavApi) {
                                 tint = iconTints[index],
                                 modifier = Modifier.size(26.dp)
                             )
-                        }
-                    }
-                }
             }
+        }
+    }
+}
+}
         }
     }
 }
