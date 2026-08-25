@@ -372,14 +372,6 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
                         maxLines = 1
                     )
                 }
-                // Bérletnél intervallum; jegynél csak egy dátum (lentebb, ikonnal) – nincs duplikáció
-                if (isPass && (purchase.validFrom != null || purchase.validTo != null)) {
-                    Text(
-                        "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1
-                    )
-                }
                 ValiditySubtitle(purchase = purchase, isPass = isPass)
             }
             Surface(
