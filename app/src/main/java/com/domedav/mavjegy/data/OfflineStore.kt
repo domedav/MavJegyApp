@@ -126,6 +126,17 @@ object OfflineStore {
         }
     }
 
+    // --- Szerver jegyképből dekódolt vonalkód-szöveg (kicsi, gyors, offline) ---
+    private fun serverBarcodeFile(context: Context, purchaseId: String) =
+        File(dir(context, "server_barcode_cache"), purchaseId.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".txt")
+
+    fun saveServerBarcode(context: Context, purchaseId: String, text: String) {
+        write(serverBarcodeFile(context, purchaseId), text)
+    }
+
+    fun loadServerBarcode(context: Context, purchaseId: String): String? =
+        read(serverBarcodeFile(context, purchaseId))?.takeIf { it.isNotBlank() }
+
     // --- Utastípus kód -> név térkép (GetAlapadatok) ---
     private fun typeNamesFile(context: Context) = File(context.filesDir, "type_names.json")
 

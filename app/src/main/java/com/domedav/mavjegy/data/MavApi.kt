@@ -25,7 +25,9 @@ data class Purchase(
     val takenOver: Boolean,
     val amount: Double,
     val currency: String,
-    val name: String? = null
+    val name: String? = null,
+    /** Bérletigazolvány azonosító (NevesitesAzonosito) – pl. 1018935324 */
+    val passHolderId: String? = null
 )
 
 /**
@@ -37,7 +39,8 @@ fun Purchase.isPassTicket(): Boolean =
 
 data class TicketData(
     val serializedTicketData: String?,
-    val jegySorszam: String?
+    val jegySorszam: String?,
+    val bizonylatTechnikaiAzonosito: String? = null
 )
 
 data class TicketDetails(
@@ -52,6 +55,13 @@ data class PassOwnerData(
     val birthDate: String?,
     val photoBase64: String?,
     val azonosito: String? = null
+)
+
+/** A szerver jegyképéből kinyert, hivatalos vonalkód-tartalom */
+data class ServerBarcodeResult(
+    val text: String?,
+    val fromCache: Boolean = false,
+    val error: String? = null
 )
 
 class MavApi(private val tokenStore: TokenStore) {
@@ -178,7 +188,8 @@ class MavApi(private val tokenStore: TokenStore) {
                     amount = o.priceAmount(),
                     currency = o.currencyKey(),
                     name = listOf("name", "Name", "Nev", "nev", "ajanlatNev", "title")
-                        .firstNotNullOfOrNull { k -> o.str(k) }
+                        .firstNotNullOfOrNull { k -> o.str(k) },
+                    passHolderId = o.str("passHolderId")
                 )
             } ?: emptyList()).distinctBy { it.id }
         }
@@ -222,7 +233,8 @@ class MavApi(private val tokenStore: TokenStore) {
                 ticketData = first?.let { o ->
                     TicketData(
                         serializedTicketData = o.str("serializedTicketData"),
-                        jegySorszam = o.str("jegySorszam")
+                        jegySorszam = o.str("jegySorszam"),
+                        bizonylatTechnikaiAzonosito = o.str("bizonylatTechnikaiAzonosito")
                     )
                 },
                 ajanlatNev = offer?.str("ajanlatNev"),
@@ -480,6 +492,136 @@ class MavApi(private val tokenStore: TokenStore) {
                 if (!ok) error(extractServerMessages(root) ?: "Sikertelen kérés (HTTP ${r.code})")
                 null
             }
+        }
+    }
+
+    /**
+     * VIM (MobileServiceS) bejelentkezés – a GetJegykep EHHEZ a tokenhez kell,
+     * NEM az IK SAML userTokenXml-hez (Bejelentkezes -> LoginResponseVO.Token).
+     * FIGYELEM: magyar IP-ről működik; külföldi IP-ről a MÁV WAF blokkolja
+     * a jelszavas kéréseket (hozzáférési szabályzat).
+     */
+    private suspend fun ensureVimSession(): Boolean = withContext(Dispatchers.IO) {
+        val expiry = tokenStore.getVimTokenExpiry()
+        if (!tokenStore.getVimToken().isNullOrBlank() &&
+            expiry > System.currentTimeMillis() + 60_000L
+        ) return@withContext true
+
+        val email = tokenStore.getEmail() ?: return@withContext false
+        val password = tokenStore.getPassword() ?: return@withContext false
+        if (!tokenStore.hasUaid()) tokenStore.setUaid(java.util.UUID.randomUUID().toString())
+
+        val body = buildJsonObject {
+            put("FelhasznaloAzonosito", email)
+            put("Jelszo", password)
+            put("Nyelv", "hu")
+            put("UAID", tokenStore.getUaid())
+        }.toString().toRequestBody(jsonBody)
+
+        try {
+            client.newCall(
+                Request.Builder()
+                    .url(vimBaseUrl + "Bejelentkezes")
+                    .header("User-Agent", USER_AGENT)
+                    .header("Accept", "gzip")
+                    .post(body)
+                    .build()
+            ).execute().use { r ->
+                if (!r.isSuccessful) return@withContext false
+                val ct = r.header("Content-Type") ?: ""
+                if (!ct.contains("json")) return@withContext false // WAF HTML blokk
+                val root = json.parseToJsonElement(r.body!!.string())
+                val token = findStringKey(root, "Token") ?: return@withContext false
+                tokenStore.setVimToken(token)
+                tokenStore.setVimTokenExpiry(parseVimExpiry(findStringKey(root, "ErvenyessegVege")))
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun parseVimExpiry(raw: String?): Long {
+        if (raw.isNullOrBlank()) return 0L
+        Regex("/Date\\((-?\\d+)").find(raw)?.groupValues?.get(1)?.toLongOrNull()?.let { return it }
+        raw.toLongOrNull()?.let { return if (it > 99_999_999_999L) it else it * 1000L }
+        return try {
+            java.time.ZonedDateTime.parse(raw).toInstant().toEpochMilli()
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    /**
+     * A SZERVER-OLDALI jegykép letöltése és a KÉPEN LÉVŐ VONALKÓD dekódolása.
+     * Ez az egyetlen hivatalos, scannelhető bérlet-kód – ezt kódoljuk újra lokálisan,
+     * tetszőleges méretű Aztec-ként. Az eredmény (kis szöveg) offline cache-be kerül.
+     */
+    suspend fun getServerTicketBarcode(
+        purchaseId: String,
+        bizonylatTechnikaiAzonosito: String?,
+        context: android.content.Context
+    ): ServerBarcodeResult = withContext(Dispatchers.IO) {
+        // 1. Offline cache – ha megvan a dekódolt kód, azonnal megy
+        OfflineStore.loadServerBarcode(context, purchaseId)?.let {
+            return@withContext ServerBarcodeResult(it, fromCache = true)
+        }
+
+        if (bizonylatTechnikaiAzonosito.isNullOrBlank()) {
+            return@withContext ServerBarcodeResult(null, error = "Nincs bizonylat-azonosító")
+        }
+        if (tokenStore.isDemo()) {
+            return@withContext ServerBarcodeResult(null, error = "Demó módban nincs szerver jegykép")
+        }
+        if (!ensureVimSession()) {
+            return@withContext ServerBarcodeResult(null, error = "VIM bejelentkezés sikertelen (csak magyar IP-ről elérhető)")
+        }
+
+        val body = buildJsonObject {
+            put("BizonylatAzonosito", kotlinx.serialization.json.buildJsonArray {
+                add(kotlinx.serialization.json.JsonPrimitive(bizonylatTechnikaiAzonosito))
+            })
+            put("FelhasznaloAzonosito", tokenStore.getUserId() ?: tokenStore.getEmail() ?: "")
+            put("Nyelv", "hu")
+            put("Token", tokenStore.getVimToken())
+            put("UAID", tokenStore.getUaid())
+        }.toString().toRequestBody(jsonBody)
+
+        try {
+            client.newCall(
+                Request.Builder()
+                    .url(vimBaseUrl + "GetJegykep")
+                    .header("User-Agent", USER_AGENT)
+                    .header("Accept", "gzip")
+                    .post(body)
+                    .build()
+            ).execute().use { r ->
+                val ct = r.header("Content-Type") ?: ""
+                if (!r.isSuccessful || !ct.contains("json")) {
+                    return@withContext ServerBarcodeResult(null, error = "GetJegykep blokkolva/hibás (HTTP ${r.code})")
+                }
+                val root = json.parseToJsonElement(r.body!!.string())
+                val b64 = findStringKey(root, "Jegykep")
+                if (b64.isNullOrBlank()) {
+                    return@withContext ServerBarcodeResult(
+                        null,
+                        error = extractServerMessages(root) ?: "A szerver nem adott vissza jegyképet"
+                    )
+                }
+                val bytes = java.util.Base64.getDecoder().decode(b64)
+                val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    ?: return@withContext ServerBarcodeResult(null, error = "Jegykép dekódolása sikertelen")
+                val text = com.domedav.mavjegy.util.BarcodeImageDecoder.decode(bmp)
+                if (text.isNullOrBlank()) {
+                    return@withContext ServerBarcodeResult(null, error = "Nem találtunk vonalkódot a jegyképben")
+                }
+                OfflineStore.saveServerBarcode(context, purchaseId, text)
+                ServerBarcodeResult(text)
+            }
+        } catch (e: Exception) {
+            OfflineStore.loadServerBarcode(context, purchaseId)?.let {
+                ServerBarcodeResult(it, fromCache = true)
+            } ?: ServerBarcodeResult(null, error = e.message ?: "Hálózati hiba")
         }
     }
 

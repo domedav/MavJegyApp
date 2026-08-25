@@ -158,7 +158,8 @@ private fun readCache(context: Context): List<Purchase> = try {
                 takenOver = o.optBoolean("takenOver", false),
                 amount = o.optDouble("amount", 0.0),
                 currency = o.optString("currency", "HUF"),
-                name = o.optString("name", "").ifEmpty { null }
+                name = o.optString("name", "").ifEmpty { null },
+                passHolderId = o.optString("passHolderId", "").ifEmpty { null }
             )
         } catch (_: Exception) { null }
     }
@@ -179,6 +180,7 @@ private fun writeCache(context: Context, purchases: List<Purchase>) = try {
                 put("amount", p.amount)
                 put("currency", p.currency)
                 put("name", p.name ?: "")
+                put("passHolderId", p.passHolderId ?: "")
             }
         )
     }

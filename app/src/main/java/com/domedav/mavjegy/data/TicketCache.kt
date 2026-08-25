@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 data class CachedTicketDetails(
     val serializedTicketData: String? = null,
     val jegySorszam: String? = null,
+    val bizonylatTechnikaiAzonosito: String? = null,
     val ajanlatNev: String? = null,
     val ervenyessegKezdete: String? = null,
     val ervenyessegVege: String? = null,
@@ -31,6 +32,7 @@ object TicketCache {
                 CachedTicketDetails(
                     serializedTicketData = details.ticketData?.serializedTicketData,
                     jegySorszam = details.ticketData?.jegySorszam,
+                    bizonylatTechnikaiAzonosito = details.ticketData?.bizonylatTechnikaiAzonosito,
                     ajanlatNev = details.ajanlatNev,
                     ervenyessegKezdete = details.ervenyessegKezdete,
                     ervenyessegVege = details.ervenyessegVege,
@@ -46,7 +48,7 @@ object TicketCache {
             if (!f.exists()) return null
             val c = json.decodeFromString(CachedTicketDetails.serializer(), f.readText())
             TicketDetails(
-                ticketData = TicketData(c.serializedTicketData, c.jegySorszam),
+                ticketData = TicketData(c.serializedTicketData, c.jegySorszam, c.bizonylatTechnikaiAzonosito),
                 ajanlatNev = c.ajanlatNev,
                 ervenyessegKezdete = c.ervenyessegKezdete,
                 ervenyessegVege = c.ervenyessegVege

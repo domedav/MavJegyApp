@@ -288,7 +288,22 @@ fun TicketDetailScreen(
                         }
                 }
 
-                LaunchedEffect(serialized, barcodeTargetPx, fetchTrigger, expired) {
+                // A HIVATALOS kód: a szerver jegyképéből dekódolt vonalkód-tartalom.
+                // Ez érkezik meg először cache-ből, majd frissül a hálózatról;
+                // ha nem elérhető, marad a serialized adatokból épített fallback.
+                var serverBarcodeText by remember(purchase.id) { mutableStateOf<String?>(null) }
+                LaunchedEffect(purchase.id, expired) {
+                    if (expired || serialized.isNullOrBlank()) return@LaunchedEffect
+                    val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito
+                    val result = runCatching {
+                        api.getServerTicketBarcode(purchase.id, bizAzon, context)
+                    }.getOrNull() ?: return@LaunchedEffect
+                    if (!result.text.isNullOrBlank()) {
+                        serverBarcodeText = result.text
+                    }
+                }
+
+                LaunchedEffect(serialized, serverBarcodeText, barcodeTargetPx, fetchTrigger, expired) {
                     if (expired || serialized.isNullOrBlank()) {
                         generatingBarcode = false
                         return@LaunchedEffect
@@ -297,7 +312,8 @@ fun TicketDetailScreen(
                     val decoded = withContext(Dispatchers.Default) {
                         runCatching { TicketDecoder.decodeSerialized(serialized) }.getOrNull()
                     }
-                    val content = decoded?.barcodeContent
+                    // 1.: szerver-kód (hivatalos), 2.: serialized tartalom
+                    val content = serverBarcodeText ?: decoded?.barcodeContent
                     if (content.isNullOrBlank()) {
                         generatingBarcode = false
                         return@LaunchedEffect
