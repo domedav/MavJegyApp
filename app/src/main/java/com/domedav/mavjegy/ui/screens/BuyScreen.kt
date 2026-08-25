@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.core.animateFloatAsState
@@ -27,20 +28,25 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
-private const val BUY_URL = "https://jegy.mav.hu"
+internal const val BUY_URL = "https://jegy.mav.hu"
 
 fun isOnline(context: Context): Boolean {
     val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
@@ -51,31 +57,27 @@ fun isOnline(context: Context): Boolean {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun BuyScreen() {
+fun BuyScreen(webViewState: MutableState<WebView?>) {
     var progress by remember { mutableFloatStateOf(0f) }
     val context = LocalContext.current
     var online by remember { mutableStateOf(isOnline(context)) }
-    val webViewRef = remember { mutableStateOf<WebView?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Session-perzisztencia: cookie-k kiírása leállításkor és képernyő-elhagyáskor is,
-    // így a webes bejelentkezés app-újraindítás után is megmarad
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE || event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                try {
-                    CookieManager.getInstance().flush()
-                } catch (_: Exception) {}
+    // Session-perzisztencia: kilépéskor / elhagyáskor elmentjük a WebView állapotát,
+    // hogy app-újraindítás után is megmaradjon a bejelentkezés.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+                webViewState.value?.let { WebViewSession.save(context, it) }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            try {
-                CookieManager.getInstance().flush()
-            } catch (_: Exception) {}
+            webViewState.value?.let { WebViewSession.save(context, it) }
         }
     }
+
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = if (progress in 0f..1f) ProgressIndicatorDefaults.ProgressAnimationSpec else spring(
@@ -117,7 +119,7 @@ fun BuyScreen() {
                 online = isOnline(context)
                 if (online) {
                     progress = 0f
-                    webViewRef.value?.loadUrl(BUY_URL)
+                    webViewState.value?.loadUrl(BUY_URL)
                 }
             }) {
                 Text("Újrapróbálás")
@@ -140,24 +142,44 @@ fun BuyScreen() {
         )
         AndroidView(
             factory = { ctx ->
-                CookieManager.getInstance().setAcceptCookie(true)
-                WebView(ctx).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    val cookies = CookieManager.getInstance()
-                    cookies.setAcceptThirdPartyCookies(this, true)
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            cookies.flush()
-                            progress = 0f
+                val existing = webViewState.value
+                if (existing != null) {
+                    // Újrahasználjuk a meglévő WebView-t (session + DOM megmarad)
+                    existing
+                } else {
+                    CookieManager.getInstance().setAcceptCookie(true)
+                    WebView(ctx).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.databaseEnabled = true
+                        val cookies = CookieManager.getInstance()
+                        cookies.setAcceptThirdPartyCookies(this, true)
+                        webViewClient = object : WebViewClient() {
+                            var restored = false
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                cookies.flush()
+                                WebViewSession.save(context, this@apply)
+                                if (!restored && url?.contains("mav.hu") == true) {
+                                    restored = true
+                                    WebViewSession.restore(context, this@apply)
+                                }
+                                progress = 0f
+                            }
                         }
+                        loadUrl(BUY_URL)
+                        webViewState.value = this
+                        // Rendszeres mentés, hogy a session sose vesszen el
+                        postDelayed(object : Runnable {
+                            override fun run() {
+                                WebViewSession.save(context, this@apply)
+                                postDelayed(this, 20000)
+                            }
+                        }, 20000)
                     }
-                    loadUrl(BUY_URL)
-                    webViewRef.value = this
                 }
             },
             update = { web ->
-                web.webChromeClient = object : android.webkit.WebChromeClient() {
+                web.webChromeClient = object : WebChromeClient() {
                     override fun onProgressChanged(view: WebView?, newProgress: Int) {
                         progress = newProgress / 100f
                     }

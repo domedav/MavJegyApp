@@ -53,12 +53,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.webkit.WebView
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.domedav.mavjegy.data.MavApi
@@ -158,6 +160,12 @@ fun AppRoot(api: MavApi) {
         SettingsStore.setPillSide(context, pillSide)
     }
 
+    // WebView példány életben tartása tab-váltáskor (így a session sose vész el)
+    val webView = remember { mutableStateOf<WebView?>(null) }
+    DisposableEffect(Unit) {
+        onDispose { webView.value?.destroy() }
+    }
+
     if (detailPurchase != null) {
         val purchase = detailPurchase!!
         // System back: visszatér a jegylistába, nem lép ki az appból
@@ -180,7 +188,7 @@ fun AppRoot(api: MavApi) {
             label = "rootSwitch"
         ) { tab ->
             when (tab) {
-                1 -> BuyScreen()
+                1 -> BuyScreen(webView)
                 else -> TicketsScreen(api = api, onOpenDetail = { detailPurchase = it })
             }
         }
