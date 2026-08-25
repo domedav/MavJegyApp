@@ -37,6 +37,14 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.layout.onSizeChanged
+import kotlin.math.abs
+import com.domedav.mavjegy.data.SettingsStore
 import kotlinx.coroutines.launch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -131,8 +139,17 @@ fun RotatePrompt() {
 
 @Composable
 fun AppRoot(api: MavApi) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    var selectedTab by remember { mutableIntStateOf(SettingsStore.getLastTab(context)) }
+    LaunchedEffect(selectedTab) {
+        SettingsStore.setLastTab(context, selectedTab)
+    }
     var detailPurchase by remember { mutableStateOf<Purchase?>(null) }
+    // 0 = jobb oldal, 1 = bal oldal – a pill oldalának megőrzése
+    var pillSide by remember { mutableIntStateOf(SettingsStore.getPillSide(context)) }
+    LaunchedEffect(pillSide) {
+        SettingsStore.setPillSide(context, pillSide)
+    }
 
     if (detailPurchase != null) {
         val purchase = detailPurchase!!
@@ -167,6 +184,17 @@ fun AppRoot(api: MavApi) {
         val dragOffset = remember { Animatable(0f) } // -1..1 skálán a kettő ikon közt
         val scope = rememberCoroutineScope()
 
+        // A pill oldalának (bal/jobb) vízszintes pozíciója – soha nincs középen,
+        // elengedéskor a legközelebbi oldalra tapad (flick-barát: pici eltolás is elég)
+        val density = LocalDensity.current
+        val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+        val edgePaddingPx = with(density) { 12.dp.toPx() }
+        var pillWidthPx by remember { mutableStateOf(0f) }
+        // 1f = jobb oldal, 0f = bal oldal – ez vezérli a pill folyamatos vízszintes pozícióját
+        val sideFraction = remember { Animatable(if (pillSide == 0) 1f else 0f) }
+        val travelPx = (screenWidthPx - pillWidthPx - 2 * edgePaddingPx).coerceAtLeast(1f)
+        val currentX = edgePaddingPx + sideFraction.value * travelPx
+
         LaunchedEffect(selectedTab) {
             dragOffset.animateTo(
                 if (selectedTab == 0) 0f else itemSizePx,
@@ -186,10 +214,67 @@ fun AppRoot(api: MavApi) {
 
         Surface(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
+                .align(Alignment.BottomStart)
                 .navigationBarsPadding()
-                .padding(end = 12.dp, bottom = 8.dp)
-                .shadow(6.dp, CircleShape),
+                .padding(bottom = 8.dp)
+                .offset { IntOffset(currentX.roundToInt(), 0) }
+                .onSizeChanged { pillWidthPx = it.width.toFloat() }
+                .shadow(6.dp, CircleShape)
+                .pointerInput(pillWidthPx) {
+                    awaitEachGesture {
+                        awaitFirstDown(pass = PointerEventPass.Initial)
+                        var horizontal = 0f
+                        var vertical = 0f
+                        var decided = false
+                        var isHorizontal = false
+                        var done = false
+                        val touchSlop = viewConfiguration.touchSlop
+                        do {
+                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                            val change = event.changes.first()
+                            val dx = change.position.x - change.previousPosition.x
+                            val dy = change.position.y - change.previousPosition.y
+                            horizontal += dx
+                            vertical += dy
+                            if (!decided) {
+                                if (abs(horizontal) > touchSlop || abs(vertical) > touchSlop) {
+                                    decided = true
+                                    isHorizontal = abs(horizontal) > abs(vertical)
+                                    if (!isHorizontal) {
+                                        // függőleges húzás -> a belső Column kezeli
+                                        done = true
+                                    }
+                                }
+                            }
+                            if (decided && isHorizontal) {
+                                change.consume()
+                                val newFraction = (sideFraction.value + dx / travelPx)
+                                    .coerceIn(0f, 1f)
+                                scope.launch { sideFraction.snapTo(newFraction) }
+                            }
+                        } while (event.changes.any { it.pressed } && !done)
+                        if (decided && isHorizontal) {
+                            // Elengedéskor a legközelebbi oldalra tapad – sosem középen.
+                            // Flick-barát: pici elhúzás az ellenkező irányba is oldalt vált.
+                            val currentSideIsRight = pillSide == 0
+                            val flickPx = travelPx * 0.12f
+                            val goOther = (currentSideIsRight && horizontal < -flickPx) ||
+                                (!currentSideIsRight && horizontal > flickPx)
+                            val targetFraction = if (goOther) {
+                                if (currentSideIsRight) 0f else 1f
+                            } else {
+                                if (sideFraction.value > 0.5f) 1f else 0f
+                            }
+                            pillSide = if (targetFraction == 1f) 0 else 1
+                            scope.launch {
+                                sideFraction.animateTo(
+                                    targetFraction,
+                                    spring(dampingRatio = Spring.DampingRatioLowBouncy)
+                                )
+                            }
+                        }
+                    }
+                },
             shape = CircleShape,
             color = pillColor,
             tonalElevation = 3.dp

@@ -384,17 +384,18 @@ fun TicketDetailScreen(
                         .fillMaxSize()
                         .pointerInput(Unit) {
                             detectTapGestures(
-                                onDoubleTap = {
-                                    when {
-                                        showServerImage -> showServerImage = false
-                                        serverImageBitmap != null -> showServerImage = true
-                                        else -> {
-                                            // töltőnézet + on-demand letöltés (siker után kép jelenik meg)
-                                            showServerImage = true
-                                            requestServerJegyKep()
-                                        }
-                                    }
-                                }
+                                // DUPLAKOPPINTÁS KIKAPCSOLVA (félkész feature) – egyelőre ne csináljon semmit
+//                                onDoubleTap = {
+//                                    when {
+//                                        showServerImage -> showServerImage = false
+//                                        serverImageBitmap != null -> showServerImage = true
+//                                        else -> {
+//                                            // töltőnézet + on-demand letöltés (siker után kép jelenik meg)
+//                                            showServerImage = true
+//                                            requestServerJegyKep()
+//                                        }
+//                                    }
+//                                }
                             )
                         }
                         .pointerInput(displaySize, zoneInnerW, showServerImage, zoneW) {
@@ -597,8 +598,17 @@ fun TicketDetailScreen(
 
         // BÉRLETTULAJDONOS / JEGYTULAJDONOS SZERKESZTÉS
         if (showEditDialog) {
+            // Kiinduló érték: a mentett szerkesztés győz, a hiányzókat a jegy adatai töltik ki
+            // (így a popup nem üres, ha a jegyen már megvannak a tulajdonosi adatok)
+            val mergedInitial = PassOwnerPrefs.Edit(
+                name = ownerEdit?.name ?: effectiveOwner?.name,
+                birthDate = ownerEdit?.birthDate ?: effectiveOwner?.birthDate,
+                azonosito = ownerEdit?.azonosito ?: effectiveOwner?.azonosito,
+                photoHash = ownerEdit?.photoHash
+            )
             EditPassOwnerDialog(
-                initial = ownerEdit,
+                initial = mergedInitial,
+                initialPhotoBase64 = if (ownerEdit?.photoHash == null) effectiveOwner?.photoBase64 else null,
                 onDismiss = { showEditDialog = false },
                 onSave = { edit ->
                     PassOwnerPrefs.save(context, purchase.id, edit)
@@ -1029,6 +1039,7 @@ private fun OwnerDetailRow(label: String, value: String) {
 @Composable
 private fun EditPassOwnerDialog(
     initial: PassOwnerPrefs.Edit?,
+    initialPhotoBase64: String? = null,
     onDismiss: () -> Unit,
     onSave: (PassOwnerPrefs.Edit) -> Unit
 ) {
@@ -1091,13 +1102,20 @@ private fun EditPassOwnerDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Fotó: koppintásra cserélhető
+                // Fotó: koppintásra cserélhető; ha nincs saját fotó, a jegy fotója látszik
                 val customBmp = photoHash?.let { hash ->
                     runCatching {
                         val bytes = com.domedav.mavjegy.data.OfflineStore.loadOwnerPhoto(context, hash)
                         bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
                     }.getOrNull()
                 }
+                val initialBmp = initialPhotoBase64?.let { b64 ->
+                    runCatching {
+                        val bytes = java.util.Base64.getDecoder().decode(b64)
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                    }.getOrNull()
+                }
+                val shownBmp = customBmp ?: initialBmp
                 Box(
                     modifier = Modifier
                         .size(96.dp)
@@ -1112,9 +1130,9 @@ private fun EditPassOwnerDialog(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (customBmp != null) {
+                    if (shownBmp != null) {
                         Image(
-                            bitmap = customBmp,
+                            bitmap = shownBmp,
                             contentDescription = "Fotó módosítása",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
