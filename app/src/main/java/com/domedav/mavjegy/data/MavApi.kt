@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
+import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -68,6 +69,8 @@ data class ServerJegyképResult(
 class MavApi(private val tokenStore: TokenStore) {
 
     private val json = Json { isLenient = true; ignoreUnknownKeys = true }
+
+    private var lastVimError: String? = null
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -503,28 +506,24 @@ class MavApi(private val tokenStore: TokenStore) {
 
         val email = tokenStore.getEmail() ?: return@withContext false
         val password = tokenStore.getPassword() ?: return@withContext false
-        if (!tokenStore.hasUaid()) tokenStore.setUaid(java.util.UUID.randomUUID().toString())
+        if (!tokenStore.hasUaid()) tokenStore.setUaid(generateUaid())
 
         val body = buildJsonObject {
             put("FelhasznaloAzonosito", email)
             put("Jelszo", password)
             put("Nyelv", "hu")
             put("UAID", tokenStore.getUaid())
-        }.toString().toRequestBody(jsonBody)
+        }.toString()
 
-        try {
-            client.newCall(
-                Request.Builder()
-                    .url(vimBaseUrl + "Bejelentkezes")
-                    .header("User-Agent", USER_AGENT)
-                    .header("Accept", "gzip")
-                    .post(body)
-                    .build()
-            ).execute().use { r ->
-                if (!r.isSuccessful) return@withContext false
-                val ct = r.header("Content-Type") ?: ""
-                if (!ct.contains("json")) return@withContext false // WAF HTML blokk
-                val root = json.parseToJsonElement(r.body!!.string())
+        return@withContext try {
+            val resp = vimHttpPost("Bejelentkezes", body)
+            if (resp.code != 200 || resp.contentType?.contains("json") != true) {
+                lastVimError =
+                    "VIM Bejelentkezes: HTTP ${resp.code}, ct=${resp.contentType}, body=${resp.body.take(200)}"
+                Log.d("MAVJEGY", lastVimError ?: "")
+                false
+            } else {
+                val root = json.parseToJsonElement(resp.body)
                 val token = findStringKey(root, "Token") ?: return@withContext false
                 tokenStore.setVimToken(token)
                 tokenStore.setVimTokenExpiry(parseVimExpiry(findStringKey(root, "ErvenyessegVege")))
@@ -554,8 +553,14 @@ class MavApi(private val tokenStore: TokenStore) {
     suspend fun getServerJegyKep(
         purchaseId: String,
         bizonylatTechnikaiAzonosito: String?,
-        context: android.content.Context
+        context: android.content.Context,
+        expired: Boolean = false
     ): ServerJegyképResult = withContext(Dispatchers.IO) {
+        if (expired) {
+            OfflineStore.deleteServerJegyKep(context, purchaseId)
+            OfflineStore.deleteServerBarcode(context, purchaseId)
+            return@withContext ServerJegyképResult(null, null, error = "A jegy lejárt – cache törölve")
+        }
         // 1. Disk cache: kép + (ha van) már dekódolt kódszöveg
         val cachedImage = OfflineStore.loadServerJegyKep(context, purchaseId)
         val cachedText = OfflineStore.loadServerBarcode(context, purchaseId)
@@ -587,46 +592,40 @@ class MavApi(private val tokenStore: TokenStore) {
             put("BizonylatAzonosito", kotlinx.serialization.json.buildJsonArray {
                 add(kotlinx.serialization.json.JsonPrimitive(bizonylatTechnikaiAzonosito))
             })
-            put("FelhasznaloAzonosito", tokenStore.getUserId() ?: tokenStore.getEmail() ?: "")
+            put("FelhasznaloAzonosito", tokenStore.getEmail() ?: "")
             put("Nyelv", "hu")
             put("Token", tokenStore.getVimToken())
             put("UAID", tokenStore.getUaid())
-        }.toString().toRequestBody(jsonBody)
+        }.toString()
 
-        try {
-            client.newCall(
-                Request.Builder()
-                    .url(vimBaseUrl + "GetJegykep")
-                    .header("User-Agent", USER_AGENT)
-                    .header("Accept", "gzip")
-                    .post(body)
-                    .build()
-            ).execute().use { r ->
-                val ct = r.header("Content-Type") ?: ""
-                if (!r.isSuccessful || !ct.contains("json")) {
-                    return@withContext ServerJegyképResult(
-                        null, cachedText,
-                        error = "GetJegykep blokkolva/hibás (HTTP ${r.code})"
-                    )
-                }
-                val root = json.parseToJsonElement(r.body!!.string())
+        return@withContext try {
+            val resp = vimHttpPost("GetJegykep", body)
+            val ct = resp.contentType ?: ""
+            if (resp.code != 200 || !ct.contains("json")) {
+                ServerJegyképResult(
+                    null, cachedText,
+                    error = "GetJegykep blokkolva (HTTP ${resp.code}, ct=${ct}): ${resp.body.take(200)}"
+                )
+            } else {
+                val root = json.parseToJsonElement(resp.body)
                 val b64 = findStringKey(root, "Jegykep")
                 if (b64.isNullOrBlank()) {
-                    return@withContext ServerJegyképResult(
+                    ServerJegyképResult(
                         null, cachedText,
                         error = extractServerMessages(root) ?: "A szerver nem adott vissza jegyképet"
                     )
-                }
-                val bytes = java.util.Base64.getDecoder().decode(b64)
-                OfflineStore.saveServerJegyKep(context, purchaseId, bytes)
+                } else {
+                    val bytes = java.util.Base64.getDecoder().decode(b64)
+                    OfflineStore.saveServerJegyKep(context, purchaseId, bytes)
 
-                var text = OfflineStore.loadServerBarcode(context, purchaseId)
-                if (text.isNullOrBlank()) {
-                    val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    text = bmp?.let { com.domedav.mavjegy.util.BarcodeImageDecoder.decode(it) }
-                    if (!text.isNullOrBlank()) OfflineStore.saveServerBarcode(context, purchaseId, text)
+                    var text = OfflineStore.loadServerBarcode(context, purchaseId)
+                    if (text.isNullOrBlank()) {
+                        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        text = bmp?.let { com.domedav.mavjegy.util.BarcodeImageDecoder.decode(it) }
+                        if (!text.isNullOrBlank()) OfflineStore.saveServerBarcode(context, purchaseId, text)
+                    }
+                    ServerJegyképResult(bytes, text)
                 }
-                ServerJegyképResult(bytes, text)
             }
         } catch (e: Exception) {
             ServerJegyképResult(null, cachedText, error = e.message ?: "Hálózati hiba")
@@ -654,6 +653,78 @@ class MavApi(private val tokenStore: TokenStore) {
         val priceObj = this["price"] as? JsonObject ?: return ""
         val cur = priceObj["currency"] as? JsonObject ?: return ""
         return (cur["key"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""
+    }
+
+    // ---- VIM (MobileServiceS) hívások: HttpURLConnection + pontos eredeti-app header-ek ----
+    // Azért HttpURLConnection (és nem OkHttp), hogy a platform Conscrypt TLS-ujjlenyomata
+    // megegyezzen a hivatalos MÁV appéval -> a WAF (F5/FortiWeb) átengedi a /rest/ POST-okat.
+
+    private data class VimResponse(val code: Int, val contentType: String?, val body: String)
+
+    private suspend fun vimHttpPost(op: String, bodyJson: String): VimResponse =
+        withContext(Dispatchers.IO) {
+            val conn = java.net.URL(vimBaseUrl + op).openConnection() as java.net.HttpURLConnection
+            try {
+                conn.requestMethod = "POST"
+                conn.connectTimeout = 30_000
+                conn.readTimeout = 60_000
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                conn.setRequestProperty("Accept", "gzip")
+                conn.setRequestProperty("Accept-Encoding", "gzip")
+                // Nincs User-Agent beállítva: a keretrendszer adja a gyári "Dalvik/..." UA-t,
+                // amit a hivatalos app is küld -> a WAF ezt várja.
+                conn.outputStream.use { it.write(bodyJson.toByteArray(Charsets.UTF_8)) }
+                val code = conn.responseCode
+                val ct = conn.contentType
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val raw = if (conn.contentEncoding?.contains("gzip", ignoreCase = true) == true)
+                    java.util.zip.GZIPInputStream(stream).readBytes()
+                else stream.readBytes()
+                VimResponse(code, ct, raw.toString(Charsets.UTF_8))
+            } finally {
+                conn.disconnect()
+            }
+        }
+
+    /**
+     * UAID generátor – portolva a hivatalos app k8/n1.smali fájljából.
+     * Formátum: "0-" + 24 karakter (4x6 base62 az UUID 16 bájtjából) + 4 karakter checksum,
+     * ahol a checksum a (karakterkód-összeg * 0x26f5) utolsó 4 tizes jegye, az utolsó jegy
+     * helyére betűvel: chr(lastDigit + 0x61) ('a'..'j').
+     */
+    private fun generateUaid(): String {
+        val alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+        fun b62(n: Int): String {
+            var x = n
+            var acc = ""
+            repeat(6) {
+                acc = alphabet[x % 0x3e] + acc
+                x /= 0x3e
+            }
+            return acc
+        }
+
+        fun rint(b: ByteArray, o: Int): Int =
+            (b[o].toInt() and 0xff shl 24) or
+                (b[o + 1].toInt() and 0xff shl 16) or
+                (b[o + 2].toInt() and 0xff shl 2) or
+                (b[o + 3].toInt() and 0xff)
+
+        val uuid = java.util.UUID.randomUUID()
+        val bytes = java.io.ByteArrayOutputStream().also {
+            java.io.DataOutputStream(it).use { d ->
+                d.writeLong(uuid.mostSignificantBits)
+                d.writeLong(uuid.leastSignificantBits)
+            }
+        }.toByteArray()
+        val huf = listOf(0, 4, 8, 12).joinToString("") { b62(kotlin.math.abs(rint(bytes, it))) }
+        val prod = huf.sumOf { it.code } * 0x26f5
+        val s = prod.toString()
+        val last4 = s.substring(s.length - 4)
+        val ca = last4.toCharArray()
+        ca[ca.size - 1] = (last4.last().toString().toInt() + 0x61).toChar()
+        return "0-$huf${String(ca)}"
     }
 
     private companion object {

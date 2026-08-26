@@ -319,8 +319,8 @@ fun TicketDetailScreen(
                     loadingServerImage = true
                     scope.launch {
                         val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito
-                        val result = runCatching {
-                            api.getServerJegyKep(purchase.id, bizAzon, context)
+                            val result = runCatching {
+                            api.getServerJegyKep(purchase.id, bizAzon, context, expired = expired)
                         }.getOrNull()
                         loadingServerImage = false
                         val bytes = result?.imageBytes
@@ -349,7 +349,12 @@ fun TicketDetailScreen(
 
                 // Első nyitásra háttérben letölti + MENTI a jegyképet (utána offline is megvan)
                 LaunchedEffect(purchase.id, serialized, expired) {
-                    if (!expired && !serialized.isNullOrBlank()) {
+                    if (expired) {
+                        com.domedav.mavjegy.data.OfflineStore.deleteServerJegyKep(context, purchase.id)
+                        com.domedav.mavjegy.data.OfflineStore.deleteServerBarcode(context, purchase.id)
+                        return@LaunchedEffect
+                    }
+                    if (!serialized.isNullOrBlank()) {
                         requestServerJegyKep()
                     }
                 }
@@ -396,6 +401,12 @@ fun TicketDetailScreen(
 //                                        }
 //                                    }
 //                                }
+                                onLongPress = {
+                                    scope.launch {
+                                        if (serverImageBitmap == null && !expired) requestServerJegyKep()
+                                        showServerImage = !showServerImage
+                                    }
+                                }
                             )
                         }
                         .pointerInput(displaySize, zoneInnerW, showServerImage, zoneW) {
@@ -487,7 +498,7 @@ fun TicketDetailScreen(
                                             .padding(top = 8.dp)
                                     ) {
                                         Text(
-                                            text = "Szerver jegykép – dupla koppintás: vissza",
+                                            text = "Szerver jegykép – hosszú nyomás: vissza az Aztec-re",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -879,7 +890,7 @@ private fun formatBirthDate(raw: String): String {
             val n = epochVal.toLong()
             val ms = if (n > 99_999_999_999L) n else n * 1000L
             java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
-                .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.", Locale("hu")))
+                .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.", Locale.forLanguageTag("hu")))
         } catch (_: Exception) {
             cleaned
         }
@@ -887,7 +898,7 @@ private fun formatBirthDate(raw: String): String {
     // ISO dátum / dátum-idő
     return try {
         LocalDate.parse(cleaned.take(10))
-            .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.", Locale("hu")))
+            .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.", Locale.forLanguageTag("hu")))
     } catch (_: Exception) {
         cleaned
     }

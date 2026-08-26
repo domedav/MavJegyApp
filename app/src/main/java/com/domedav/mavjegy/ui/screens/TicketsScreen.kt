@@ -1,11 +1,14 @@
 package com.domedav.mavjegy.ui.screens
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,10 +56,12 @@ import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
 import com.domedav.mavjegy.data.TicketCache
 import com.domedav.mavjegy.data.isPassTicket
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import java.io.File
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -115,7 +120,7 @@ private fun parseIso(iso: String?): LocalDateTime? {
     return null
 }
 
-private val huDate = SimpleDateFormat("yyyy.MM.dd HH:mm", Locale("hu"))
+private val huDate = SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.forLanguageTag("hu"))
 
 private val isoFormats = listOf(
     "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
@@ -308,15 +313,71 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(valid, key = { it.id }) { purchase ->
-                    PurchaseCard(purchase = purchase, onClick = { onOpenDetail(purchase) })
+                    PurchaseCard(
+                        purchase = purchase,
+                        onClick = { onOpenDetail(purchase) },
+                        onLongClick = {
+                            scope.launch {
+                                try {
+                                    snackbar.show("Jegykép letöltése…", isError = false)
+                                    val details = api.getTicketDetails(purchase.id)
+                                    val bizAzon =
+                                        details.ticketData?.bizonylatTechnikaiAzonosito
+                                    if (bizAzon.isNullOrBlank()) {
+                                        snackbar.show(
+                                            "Nincs bizonylat-azonosító a jegyhez",
+                                            isError = true
+                                        )
+                                        return@launch
+                                    }
+                                    val expired =
+                                        parseIso(purchase.validTo)?.isBefore(LocalDateTime.now())
+                                            ?: false
+                                    val result =
+                                        api.getServerJegyKep(
+                                            purchase.id,
+                                            bizAzon,
+                                            context,
+                                            expired = expired
+                                        )
+                                    val bytes = result.imageBytes
+                                    if (bytes == null) {
+                                        snackbar.show(
+                                            "Letöltés sikertelen: ${result.error ?: "nincs kép"}",
+                                            isError = true
+                                        )
+                                        return@launch
+                                    }
+                                    val name =
+                                        if (bizAzon == "1752960950") "jegykep_orszagberlet.png"
+                                        else "mavjegy_${purchase.id}.png"
+                                    shareServerJegyKep(context, bytes, name)
+                                    snackbar.show(
+                                        "Megosztásra készen áll: $name",
+                                        isError = false
+                                    )
+                                } catch (e: Exception) {
+                                    snackbar.show(
+                                        "Hiba: ${e.message ?: e}",
+                                        isError = true
+                                    )
+                                }
+                            }
+                        }
+                    )
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
+private fun PurchaseCard(
+    purchase: Purchase,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {}
+) {
     val isValid = purchase.status.trim().equals("Ervenyes", ignoreCase = true)
     val isPass = purchase.isPassTicket()
     Card(
@@ -335,7 +396,7 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -391,4 +452,21 @@ private fun PurchaseCard(purchase: Purchase, onClick: () -> Unit) {
             }
         }
     }
+}
+
+private suspend fun shareServerJegyKep(context: android.content.Context, bytes: ByteArray, displayName: String) {
+    val mime = if (bytes.size >= 4 &&
+            bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() &&
+            bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte()) "image/png" else "image/jpeg"
+    val uri = withContext(Dispatchers.IO) {
+        val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+        val file = java.io.File(dir, displayName).apply { writeBytes(bytes) }
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = mime
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Jegy megosztása"))
 }

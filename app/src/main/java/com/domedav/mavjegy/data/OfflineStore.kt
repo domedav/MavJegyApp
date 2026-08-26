@@ -201,6 +201,28 @@ object OfflineStore {
     fun loadServerBarcode(context: Context, purchaseId: String): String? =
         read(serverBarcodeFile(context, purchaseId))?.takeIf { it.isNotBlank() }
 
+    fun deleteServerJegyKep(context: Context, purchaseId: String) {
+        try {
+            val idx = jegykepIndexFile(context)
+            if (idx.exists()) {
+                val obj = JSONObject(idx.readText())
+                val hash = obj.optString(purchaseId, "")
+                obj.remove(purchaseId)
+                idx.writeText(obj.toString())
+                if (hash.isNotBlank()) {
+                    val f = File(jegykepDir(context), "$hash.jpg")
+                    if (f.exists()) f.delete()
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun deleteServerBarcode(context: Context, purchaseId: String) {
+        try {
+            serverBarcodeFile(context, purchaseId).delete()
+        } catch (_: Exception) {}
+    }
+
     // --- Utastípus kód -> név térkép (GetAlapadatok) ---
     private fun typeNamesFile(context: Context) = File(context.filesDir, "type_names.json")
 
