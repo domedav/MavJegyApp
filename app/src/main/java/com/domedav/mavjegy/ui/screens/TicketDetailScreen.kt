@@ -10,6 +10,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -49,6 +50,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -82,6 +84,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import com.domedav.mavjegy.data.MavApi
+import com.domedav.mavjegy.data.SettingsStore
 import com.domedav.mavjegy.data.Purchase
 import com.domedav.mavjegy.data.TicketCache
 import com.domedav.mavjegy.data.TicketDetails
@@ -95,6 +98,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -179,6 +183,8 @@ fun TicketDetailScreen(
 
     val expired = isPurchaseExpired(purchase)
 
+    var showSwipeHint by remember { mutableStateOf(false) }
+
     val pageOffsetY = remember { Animatable(0f) }
     val pageScale = remember { Animatable(1f) }
     val screenH = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
@@ -199,6 +205,14 @@ fun TicketDetailScreen(
 
     // Hibák snackbarban
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        if (!SettingsStore.getHasSwipedBack(context)) {
+            showSwipeHint = true
+            kotlinx.coroutines.delay(6000)
+            showSwipeHint = false
+        }
+    }
 
     LaunchedEffect(purchase.id, fetchTrigger) {
         loadingDetails = true
@@ -243,6 +257,15 @@ fun TicketDetailScreen(
                 .navigationBarsPadding()
                 .zIndex(2f)
         )
+        AnimatedVisibility(
+            visible = showSwipeHint,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .zIndex(3f)
+        ) {
+            Snackbar { Text("Pöccintsen az alsó sávon felfelé vagy lefelé a visszalépéshez") }
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -317,7 +340,7 @@ fun TicketDetailScreen(
                     mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
                 }
                 var loadingServerImage by remember(purchase.id) { mutableStateOf(false) }
-                var showServerImage by remember(purchase.id) { mutableStateOf(false) }
+                var showServerImage by remember(purchase.id) { mutableStateOf(SettingsStore.getDetailPreferServerImage(context)) }
                 var serverFetchStarted by remember(purchase.id) { mutableStateOf(false) }
 
                 fun requestServerJegyKep() {
@@ -371,6 +394,10 @@ fun TicketDetailScreen(
                     }
                 }
 
+                LaunchedEffect(showServerImage) {
+                    if (showServerImage && serverImageBitmap == null && !expired) requestServerJegyKep()
+                }
+
                 LaunchedEffect(serialized, serverBarcodeText, barcodeTargetPx, fetchTrigger, expired) {
                     if (expired || serialized.isNullOrBlank()) {
                         generatingBarcode = false
@@ -413,10 +440,11 @@ fun TicketDetailScreen(
 //                                        }
 //                                    }
 //                                }
-                                onLongPress = {
+                                onTap = {
                                     scope.launch {
                                         if (serverImageBitmap == null && !expired) requestServerJegyKep()
                                         showServerImage = !showServerImage
+                                        SettingsStore.setDetailPreferServerImage(context, showServerImage)
                                     }
                                 }
                             )
@@ -556,6 +584,7 @@ fun TicketDetailScreen(
                                         val dir = if (pageOffsetY.value >= 0f) 1f else -1f
                                         pageOffsetY.animateTo(dir * screenH, tween(250))
                                         pageScale.animateTo(0.85f, tween(250))
+                                        SettingsStore.setHasSwipedBack(context, true)
                                         onBack()
                                     } else {
                                         pageOffsetY.animateTo(0f, tween(200))

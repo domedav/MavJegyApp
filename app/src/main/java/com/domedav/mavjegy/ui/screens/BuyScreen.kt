@@ -29,6 +29,7 @@ import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.domedav.mavjegy.data.SettingsStore
+import com.domedav.mavjegy.ui.components.LocalSnackbar
 
 internal const val BUY_URL = "https://jegy.mav.hu"
 
@@ -60,8 +63,20 @@ fun isOnline(context: Context): Boolean {
 fun BuyScreen(webViewState: MutableState<WebView?>) {
     var progress by remember { mutableFloatStateOf(0f) }
     val context = LocalContext.current
+    val snackbar = LocalSnackbar.current
     var online by remember { mutableStateOf(isOnline(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(Unit) {
+        if (!SettingsStore.getWebviewLoginHintSeen(context)) {
+            snackbar.show(
+                "Be kell jelentkeznie a felhasználónak – a WebView oldalán fent a kis ember ikonra nyomva!",
+                isError = false
+            )
+            SettingsStore.setWebviewLoginHintSeen(context, true)
+        }
+    }
+
 
     // Session-perzisztencia: kilépéskor / elhagyáskor elmentjük a WebView állapotát,
     // hogy app-újraindítás után is megmaradjon a bejelentkezés.

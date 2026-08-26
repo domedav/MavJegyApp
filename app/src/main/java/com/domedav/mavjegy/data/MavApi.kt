@@ -27,7 +27,7 @@ data class Purchase(
     val amount: Double,
     val currency: String,
     val name: String? = null,
-    /** Bérletigazolvány azonosító (NevesitesAzonosito) – pl. 1018935324 */
+    /** Bérletigazolvány azonosító (NevesitesAzonosito) – pl. 1234567890 */
     val passHolderId: String? = null
 )
 

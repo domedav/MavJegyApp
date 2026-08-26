@@ -128,9 +128,9 @@ object OfflineStore {
 
     // --- Szerver jegykép: egyszer lekérve MENTJÜK (hash-dedup + JPEG kompresszió) ---
 
-    private fun jegykepDir(context: Context) = dir(context, "jegykep_cache")
+    private fun mavjegyCacheDir(context: Context) = dir(context, "mavjegy_cache")
 
-    private fun jegykepIndexFile(context: Context) = File(context.filesDir, "jegykep_index.json")
+    private fun mavjegyIndexFile(context: Context) = File(context.filesDir, "mavjegy_index.json")
 
     /** Kompresszió: max 1600 px hosszabb oldal, JPEG minőség csökkentve 2 MB-ig */
     private fun compressImage(raw: ByteArray): ByteArray? {
@@ -162,13 +162,13 @@ object OfflineStore {
         return try {
             val compressed = compressImage(raw) ?: return null
             val hash = sha256(compressed)
-            val target = File(jegykepDir(context), "$hash.jpg")
+            val target = File(mavjegyCacheDir(context), "$hash.jpg")
             if (!target.exists() || target.length() == 0L) {
                 target.parentFile?.let { if (!it.exists()) it.mkdirs() }
                 target.writeBytes(compressed)
             }
             // purchaseId -> hash index
-            val idx = jegykepIndexFile(context)
+            val idx = mavjegyIndexFile(context)
             val obj = try {
                 JSONObject(idx.takeIf { it.exists() }?.readText() ?: "{}")
             } catch (_: Exception) { JSONObject() }
@@ -181,36 +181,36 @@ object OfflineStore {
     }
 
     fun loadServerJegyKep(context: Context, purchaseId: String): ByteArray? = try {
-        val idx = jegykepIndexFile(context)
+        val idx = mavjegyIndexFile(context)
         val obj = JSONObject(idx.takeIf { it.exists() }?.readText() ?: "{}")
         val hash = obj.optString(purchaseId, "").takeIf { it.isNotBlank() } ?: return null
-        val f = File(jegykepDir(context), "$hash.jpg")
+        val f = File(mavjegyCacheDir(context), "$hash.jpg")
         if (f.exists()) f.readBytes() else null
     } catch (_: Exception) {
         null
     }
 
     // --- Szerver jegyképből dekódolt vonalkód-szöveg (kicsi, gyors, offline) ---
-    private fun serverBarcodeFile(context: Context, purchaseId: String) =
-        File(dir(context, "server_barcode_cache"), purchaseId.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".txt")
+    private fun mavjegyBarcodeFile(context: Context, purchaseId: String) =
+        File(dir(context, "mavjegy_barcode_cache"), purchaseId.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".txt")
 
     fun saveServerBarcode(context: Context, purchaseId: String, text: String) {
-        write(serverBarcodeFile(context, purchaseId), text)
+        write(mavjegyBarcodeFile(context, purchaseId), text)
     }
 
     fun loadServerBarcode(context: Context, purchaseId: String): String? =
-        read(serverBarcodeFile(context, purchaseId))?.takeIf { it.isNotBlank() }
+        read(mavjegyBarcodeFile(context, purchaseId))?.takeIf { it.isNotBlank() }
 
     fun deleteServerJegyKep(context: Context, purchaseId: String) {
         try {
-            val idx = jegykepIndexFile(context)
+            val idx = mavjegyIndexFile(context)
             if (idx.exists()) {
                 val obj = JSONObject(idx.readText())
                 val hash = obj.optString(purchaseId, "")
                 obj.remove(purchaseId)
                 idx.writeText(obj.toString())
                 if (hash.isNotBlank()) {
-                    val f = File(jegykepDir(context), "$hash.jpg")
+                    val f = File(mavjegyCacheDir(context), "$hash.jpg")
                     if (f.exists()) f.delete()
                 }
             }
@@ -219,7 +219,7 @@ object OfflineStore {
 
     fun deleteServerBarcode(context: Context, purchaseId: String) {
         try {
-            serverBarcodeFile(context, purchaseId).delete()
+            mavjegyBarcodeFile(context, purchaseId).delete()
         } catch (_: Exception) {}
     }
 

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Train
 import androidx.compose.material3.Card
@@ -348,9 +349,7 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
                                         )
                                         return@launch
                                     }
-                                    val name =
-                                        if (bizAzon == "1752960950") "jegykep_orszagberlet.png"
-                                        else "mavjegy_${purchase.id}.png"
+                                    val name = "mavjegy_${purchase.id}.png"
                                     shareServerJegyKep(context, bytes, name)
     snackbar.show(
         "A jegy megosztásra kész",
@@ -403,6 +402,13 @@ private fun PurchaseCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            IconButton(onClick = onLongClick) {
+                Icon(
+                    imageVector = Icons.Rounded.Share,
+                    contentDescription = "Jegy megosztása",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
             Box(
                 modifier = Modifier
                     .size(48.dp)
