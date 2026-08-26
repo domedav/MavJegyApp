@@ -5,6 +5,7 @@ package com.domedav.mavjegy.ui.screens
 import android.app.Activity
 import android.graphics.BitmapFactory
 import android.view.WindowManager
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -16,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,7 +35,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.ConfirmationNumber
 import androidx.compose.material.icons.rounded.Edit
@@ -71,6 +72,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -177,6 +179,11 @@ fun TicketDetailScreen(
 
     val expired = isPurchaseExpired(purchase)
 
+    val pageOffsetY = remember { Animatable(0f) }
+    val pageScale = remember { Animatable(1f) }
+    val screenH = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    val minOffsetToClose = screenH / 5f
+
     // Szerkesztett fotó (ha van) a hash-alapú cache-ből
     var customPhotoBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     LaunchedEffect(ownerEdit?.photoHash) {
@@ -223,6 +230,11 @@ fun TicketDetailScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            .graphicsLayer {
+                translationY = pageOffsetY.value
+                scaleX = pageScale.value
+                scaleY = pageScale.value
+            }
     ) {
         androidx.compose.material3.SnackbarHost(
             hostState = snackbarHostState,
@@ -490,20 +502,6 @@ fun TicketDetailScreen(
                                                 translationY = offsetY ?: 0f
                                             }
                                     )
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
-                                        modifier = Modifier
-                                            .align(Alignment.TopCenter)
-                                            .padding(top = 8.dp)
-                                    ) {
-                                        Text(
-                                            text = "Szerver jegykép – hosszú nyomás: vissza az Aztec-re",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                        )
-                                    }
                                 }
                             }
 
@@ -546,16 +544,48 @@ fun TicketDetailScreen(
             }
 
             // ---------------- ALSÓ PANEL: TULAJ + ÉRVÉNYESSÉG ----------------
-            details?.let { d ->
-                OwnerAndValidityPanel(
-                    details = d,
-                    purchase = purchase,
-                    owner = effectiveOwner,
-                    photoBitmap = displayPhotoBitmap,
-                    isPass = isPass,
-                    onOwnerClick = { showOwnerDialog = true },
-                    onEditClick = { showEditDialog = true }
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragStart = {},
+                            onDragEnd = {
+                                scope.launch {
+                                    if (kotlin.math.abs(pageOffsetY.value) > minOffsetToClose) {
+                                        val dir = if (pageOffsetY.value >= 0f) 1f else -1f
+                                        pageOffsetY.animateTo(dir * screenH, tween(250))
+                                        pageScale.animateTo(0.85f, tween(250))
+                                        onBack()
+                                    } else {
+                                        pageOffsetY.animateTo(0f, tween(200))
+                                        pageScale.animateTo(1f, tween(200))
+                                    }
+                                }
+                            },
+                            onVerticalDrag = { _, dragAmount ->
+                                scope.launch {
+                                    val ny = (pageOffsetY.value + dragAmount).coerceIn(-screenH, screenH)
+                                    pageOffsetY.snapTo(ny)
+                                    pageScale.snapTo(
+                                        (1f - kotlin.math.abs(ny) / (screenH * 0.9f)).coerceIn(0.85f, 1f)
+                                    )
+                                }
+                            }
+                        )
+                    }
+            ) {
+                details?.let { d ->
+                    OwnerAndValidityPanel(
+                        details = d,
+                        purchase = purchase,
+                        owner = effectiveOwner,
+                        photoBitmap = displayPhotoBitmap,
+                        isPass = isPass,
+                        onOwnerClick = { showOwnerDialog = true },
+                        onEditClick = { showEditDialog = true }
+                    )
+                }
             }
         }
 
@@ -566,22 +596,9 @@ fun TicketDetailScreen(
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Vissza",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
             if (errorMessage != null) {
                 Surface(
                     shape = CircleShape,

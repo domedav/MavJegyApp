@@ -352,10 +352,10 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
                                         if (bizAzon == "1752960950") "jegykep_orszagberlet.png"
                                         else "mavjegy_${purchase.id}.png"
                                     shareServerJegyKep(context, bytes, name)
-                                    snackbar.show(
-                                        "Megosztásra készen áll: $name",
-                                        isError = false
-                                    )
+    snackbar.show(
+        "A jegy megosztásra kész",
+        isError = false
+    )
                                 } catch (e: Exception) {
                                     snackbar.show(
                                         "Hiba: ${e.message ?: e}",
