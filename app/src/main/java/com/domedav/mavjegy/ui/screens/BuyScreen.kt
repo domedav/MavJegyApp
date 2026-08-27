@@ -70,7 +70,7 @@ fun BuyScreen(webViewState: MutableState<WebView?>) {
     LaunchedEffect(Unit) {
         if (!SettingsStore.getWebviewLoginHintSeen(context)) {
             snackbar.show(
-                "Be kell jelentkeznie a felhasználónak – a WebView oldalán fent a kis ember ikonra nyomva!",
+                "Jelentkezz be az oldal tetején!",
                 isError = false
             )
             SettingsStore.setWebviewLoginHintSeen(context, true)

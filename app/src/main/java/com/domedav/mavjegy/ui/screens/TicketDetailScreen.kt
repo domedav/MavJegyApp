@@ -207,7 +207,7 @@ fun TicketDetailScreen(
     // Hibák snackbarban
     LaunchedEffect(Unit) {
         if (!SettingsStore.getHasSwipedBack(context)) {
-            snackbar.show("Pöccintsen az alsó sávon felfelé vagy lefelé a visszalépéshez", isError = false)
+            snackbar.show("Húzza felfelé az alsó sávot a visszalépéshez", isError = false)
         }
     }
 
@@ -390,10 +390,10 @@ fun TicketDetailScreen(
                         generatingBarcode = false
                         // Sikertelen kinyerés: mutassuk az eredeti letöltött jegyképet.
                         showServerImage = true
-                        snackbar.show(
-                            "Nem sikerült a kód kinyerése – az eredeti jegykép látható",
-                            isError = false
-                        )
+                        // snackbar.show(
+                        //     "Nem sikerült a kód kinyerése – az eredeti jegykép látható",
+                        //     isError = false
+                        // )
                         return@LaunchedEffect
                     }
                     barcodeBitmap = withContext(Dispatchers.Default) {
@@ -910,7 +910,7 @@ private fun WavyLoadingIndicator(modifier: Modifier = Modifier) {
     )
 
     Canvas(modifier = modifier.size(56.dp)) {
-        val stroke = 3.5.dp.toPx()
+        val stroke = 5.5.dp.toPx()
         val radius = size.minDimension / 2f - stroke * 2f
         val amp = stroke * 1.15f
         val sweepMax = twoPi * 0.72f
@@ -919,7 +919,7 @@ private fun WavyLoadingIndicator(modifier: Modifier = Modifier) {
         var first = true
         var angle = start
         while (angle <= start + sweepMax) {
-            val wave = kotlin.math.sin(angle / twoPi * 6f * twoPi + phase)
+            val wave = kotlin.math.sin(angle * 3f + phase)
             val rr = radius + amp * wave
             val x = center.x + rr * kotlin.math.cos(angle)
             val y = center.y + rr * kotlin.math.sin(angle)

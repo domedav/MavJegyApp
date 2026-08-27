@@ -10,7 +10,7 @@ fun friendlyError(raw: String?): String {
         l.contains("socket") || l.contains("unable to resolve") ||
         l.contains("no route") || l.contains("connectexception") ||
         l.contains("network") || l.contains("dns") ->
-            "Nincs internetkapcsolat. Ellenőrizd a hálózatot."
+            "Nincs internetkapcsolat."
         l.contains("401") || l.contains("403") || l.contains("unauthorized") ||
         l.contains("bejelentkezes sikertelen") || l.contains("hibás") ||
         l.contains("rossz") || l.contains("invalid") || l.contains("credential") ||
@@ -19,8 +19,8 @@ fun friendlyError(raw: String?): String {
         l.contains("blokkolva") || l.contains("waf") || l.contains("getjegykep") ||
         l.contains("http 4") || l.contains("http 5") || l.contains("http 40") ||
         l.contains("http 50") || l.contains("500") || l.contains("503") ->
-            "A szerver nem érhető el. Próbáld később (magyar hálózatról)."
+            "A szerver nem érhető el. Próbáld később."
         l.contains("lejárt") -> "A jegy lejárt."
-        else -> "Valami hiba történt. Próbáld újra."
+        else -> "Hiba történt. Próbáld újra."
     }
 }
