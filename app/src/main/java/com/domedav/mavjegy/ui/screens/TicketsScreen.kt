@@ -236,6 +236,7 @@ private fun writeCache(context: Context, purchases: List<Purchase>) = try {
 @Composable
 fun TicketsScreen(
     api: MavApi,
+    refreshTrigger: Int = 0,
     onOpenDetail: (Purchase) -> Unit = {},
     onNavigateToBuy: () -> Unit = {},
     onLogout: () -> Unit = {}
@@ -298,6 +299,11 @@ fun TicketsScreen(
         val cached = withContext(Dispatchers.IO) { readCache(context) }
         purchases = keepAlive(cached, includeExpired)
         fetchAndMerge(previousList = cached)
+    }
+    LaunchedEffect(refreshTrigger) {
+        if (refreshTrigger != 0) {
+            fetchAndMerge(previousList = purchases)
+        }
     }
 
     fun refresh() {

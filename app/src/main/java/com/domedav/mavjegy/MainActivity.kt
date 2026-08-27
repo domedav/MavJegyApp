@@ -162,6 +162,13 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
         SettingsStore.setLastTab(context, selectedTab)
     }
     var detailPurchase by remember { mutableStateOf<Purchase?>(null) }
+    var ticketsRefreshTrigger by remember { mutableIntStateOf(0) }
+    var previousTab by remember { mutableIntStateOf(selectedTab) }
+    LaunchedEffect(selectedTab) {
+        if (previousTab == 1 && selectedTab == 0) ticketsRefreshTrigger++
+        previousTab = selectedTab
+        SettingsStore.setLastTab(context, selectedTab)
+    }
     // 0 = jobb oldal, 1 = bal oldal – a pill oldalának megőrzése
     var pillSide by remember { mutableIntStateOf(SettingsStore.getPillSide(context)) }
     LaunchedEffect(pillSide) {
@@ -185,20 +192,6 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
         }
     }
 
-    if (detailPurchase != null) {
-        val purchase = detailPurchase!!
-        // System back: visszatér a jegylistába, nem lép ki az appból
-        androidx.activity.compose.BackHandler {
-            detailPurchase = null
-        }
-        TicketDetailScreen(
-            api = api,
-            purchase = purchase,
-            onBack = { detailPurchase = null }
-        )
-        return
-    }
-
     Box(modifier = Modifier.fillMaxSize()) {
         Crossfade(
             targetState = selectedTab,
@@ -210,6 +203,7 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                 1 -> BuyScreen(webView)
                 else -> TicketsScreen(
                     api = api,
+                    refreshTrigger = ticketsRefreshTrigger,
                     onOpenDetail = { detailPurchase = it },
                     onNavigateToBuy = { selectedTab = 1 },
                     onLogout = doLogout
@@ -251,7 +245,7 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
         val tint1 = lerp(MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.onPrimary, dragProgress)
         val iconTints = listOf(tint0, tint1)
 
-        Surface(
+        if (detailPurchase == null) Surface(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .navigationBarsPadding()
@@ -374,7 +368,12 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
         }
     }
 }
-}
+        }
+        if (detailPurchase != null) {
+            val purchase = detailPurchase!!
+            androidx.activity.compose.BackHandler { detailPurchase = null }
+            TicketDetailScreen(api = api, purchase = purchase, onBack = { detailPurchase = null })
         }
     }
+}
 }
