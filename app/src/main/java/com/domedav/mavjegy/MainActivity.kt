@@ -189,7 +189,11 @@ fun AppRoot(api: MavApi) {
         ) { tab ->
             when (tab) {
                 1 -> BuyScreen(webView)
-                else -> TicketsScreen(api = api, onOpenDetail = { detailPurchase = it })
+                else -> TicketsScreen(
+                    api = api,
+                    onOpenDetail = { detailPurchase = it },
+                    onNavigateToBuy = { selectedTab = 1 }
+                )
             }
         }
 

@@ -384,13 +384,16 @@ fun TicketDetailScreen(
                         return@LaunchedEffect
                     }
                     generatingBarcode = true
-                    val decoded = withContext(Dispatchers.Default) {
-                        runCatching { TicketDecoder.decodeSerialized(serialized) }.getOrNull()
-                    }
-                    // 1.: szerver-kód (hivatalos), 2.: serialized tartalom
-                    val content = serverBarcodeText ?: decoded?.barcodeContent
+                    // Csak a MÁV szerverkép vonalkódja a hivatalos – nincs fallback más forrásra.
+                    val content = serverBarcodeText
                     if (content.isNullOrBlank()) {
                         generatingBarcode = false
+                        // Sikertelen kinyerés: mutassuk az eredeti letöltött jegyképet.
+                        showServerImage = true
+                        snackbar.show(
+                            "Nem sikerült a kód kinyerése – az eredeti jegykép látható",
+                            isError = false
+                        )
                         return@LaunchedEffect
                     }
                     barcodeBitmap = withContext(Dispatchers.Default) {

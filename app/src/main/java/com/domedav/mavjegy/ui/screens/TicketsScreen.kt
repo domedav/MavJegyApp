@@ -40,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -195,7 +196,11 @@ private fun writeCache(context: Context, purchases: List<Purchase>) = try {
 } catch (_: Exception) {}
 
 @Composable
-fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
+fun TicketsScreen(
+    api: MavApi,
+    onOpenDetail: (Purchase) -> Unit = {},
+    onNavigateToBuy: () -> Unit = {}
+) {
     var loading by remember { mutableStateOf(false) }
     var purchases by remember { mutableStateOf<List<Purchase>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -302,6 +307,25 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+            if (!loading && valid.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Nincs érvényes jegyed vagy bérleted",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Button(onClick = onNavigateToBuy) {
+                            Text("Jegy vásárlása")
+                        }
+                    }
+                }
+            } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
@@ -395,6 +419,7 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
                         )
                     }
                 }
+            }
             }
         }
     }
