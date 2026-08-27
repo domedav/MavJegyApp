@@ -9,7 +9,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,7 +19,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
@@ -30,7 +31,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.CardMembership
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
@@ -50,31 +53,38 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
 import com.domedav.mavjegy.data.TicketCache
 import com.domedav.mavjegy.data.isPassTicket
+import com.domedav.mavjegy.data.isValidTicket
+import com.domedav.mavjegy.ui.components.ExpressiveLoader
 import com.domedav.mavjegy.util.friendlyError
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import java.io.File
-import java.text.SimpleDateFormat
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -95,7 +105,7 @@ private fun ValiditySubtitle(purchase: Purchase, isPass: Boolean) {
                     modifier = Modifier.size(14.dp)
                 )
                 Text(
-                    stringResource(R.string.fmt_valid_days, days),
+                    stringResource(R.string.fmt_days, days),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1
                 )
@@ -120,36 +130,55 @@ private fun ValiditySubtitle(purchase: Purchase, isPass: Boolean) {
 
 private fun parseIso(iso: String?): LocalDateTime? {
     if (iso.isNullOrBlank()) return null
-    for (fmt in isoFormats) {
+    for (fmt in isoDateTimeFormatters) {
         try {
-            return SimpleDateFormat(fmt, Locale.US).apply { isLenient = false }.parse(iso)
-                ?.let { java.time.Instant.ofEpochMilli(it.time).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() }
+            val parsed = fmt.parse(iso)
+            return try {
+                OffsetDateTime.from(parsed)
+                    .toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime()
+            } catch (_: Exception) {
+                try {
+                    LocalDateTime.from(parsed)
+                } catch (_: Exception) {
+                    LocalDate.from(parsed).atStartOfDay(ZoneId.systemDefault()).toLocalDateTime()
+                }
+            }
         } catch (_: Exception) {}
     }
     return null
 }
 
-private val huDate = SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.forLanguageTag("hu"))
+private val huDateTime = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm", Locale.forLanguageTag("hu"))
 
-private val isoFormats = listOf(
-    "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-    "yyyy-MM-dd'T'HH:mm:ssXXX",
-    "yyyy-MM-dd'T'HH:mm:ss.SSS",
-    "yyyy-MM-dd'T'HH:mm:ss",
-    "yyyy-MM-dd"
+private val isoDateTimeFormatters = listOf(
+    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX"),
+    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX"),
+    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"),
+    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+    DateTimeFormatter.ofPattern("yyyy-MM-dd")
 )
 
 internal fun formatDate(iso: String?, fallback: String): String {
     if (iso.isNullOrBlank()) return fallback
     return try {
-        var parsed: Date? = null
-        for (fmt in isoFormats) {
+        var formatted: String? = null
+        for (fmt in isoDateTimeFormatters) {
             try {
-                parsed = SimpleDateFormat(fmt, Locale.US).apply { isLenient = false }.parse(iso)
+                val parsed = fmt.parse(iso)
+                val temporal = try {
+                    OffsetDateTime.from(parsed).toInstant().atZone(ZoneId.systemDefault())
+                } catch (_: Exception) {
+                    try {
+                        LocalDateTime.from(parsed).atZone(ZoneId.systemDefault())
+                    } catch (_: Exception) {
+                        LocalDate.from(parsed).atStartOfDay(ZoneId.systemDefault())
+                    }
+                }
+                formatted = huDateTime.format(temporal)
                 break
             } catch (_: Exception) {}
         }
-        parsed?.let { huDate.format(it) } ?: fallback
+        formatted ?: fallback
     } catch (_: Exception) { fallback }
 }
 
@@ -205,21 +234,25 @@ private fun writeCache(context: Context, purchases: List<Purchase>) = try {
 fun TicketsScreen(
     api: MavApi,
     onOpenDetail: (Purchase) -> Unit = {},
-    onNavigateToBuy: () -> Unit = {}
+    onNavigateToBuy: () -> Unit = {},
+    onLogout: () -> Unit = {}
 ) {
     var loading by remember { mutableStateOf(false) }
     var purchases by remember { mutableStateOf<List<Purchase>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var includeExpired by remember { mutableStateOf(false) }
+    val nameOverrides = remember { mutableStateMapOf<String, String>() }
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // Lejárt jegyek: nem létezőnek vesszük – listából, cache-ből is eltávolítjuk
-    fun keepAlive(list: List<Purchase>): List<Purchase> {
+    fun keepAlive(list: List<Purchase>, keepExpired: Boolean = false): List<Purchase> {
         val now = LocalDateTime.now()
         return list.filter { p ->
-            val statusOk = p.status.trim().equals("Ervenyes", ignoreCase = true)
+            val statusOk = p.isValidTicket
             val to = parseIso(p.validTo)
-            statusOk && (to == null || !to.isBefore(now))
+            val expired = to != null && to.isBefore(now)
+            if (keepExpired) statusOk || expired else statusOk && !expired
         }
     }
 
@@ -230,38 +263,36 @@ fun TicketsScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        val cached = withContext(Dispatchers.IO) { readCache(context) }
-        purchases = keepAlive(cached)
+    suspend fun fetchAndMerge(previousList: List<Purchase>): List<Purchase> {
         loading = true
         try {
-            val fresh = keepAlive(withContext(Dispatchers.IO) { api.getPurchases() })
-            purgeRemoved(context, cached, fresh)
-            purchases = fresh
-            withContext(Dispatchers.IO) { writeCache(context, fresh) }
+            val fresh = keepAlive(withContext(Dispatchers.IO) { api.getPurchases() }, includeExpired)
+            purgeRemoved(context, previousList, fresh)
+            val merged = fresh.map { p ->
+                if (!p.name.isNullOrBlank()) p
+                else TicketCache.loadName(context, p.id)?.let { p.copy(name = it) } ?: p
+            }
+            purchases = merged
+            withContext(Dispatchers.IO) { writeCache(context, merged) }
             error = null
+            return merged
         } catch (e: Exception) {
             error = e.message
+            return previousList
         } finally {
             loading = false
         }
     }
 
+    LaunchedEffect(Unit) {
+        val cached = withContext(Dispatchers.IO) { readCache(context) }
+        purchases = keepAlive(cached, includeExpired)
+        fetchAndMerge(previousList = cached)
+    }
+
     fun refresh() {
-        loading = true
         scope.launch {
-            try {
-                val old = purchases
-                val fresh = keepAlive(withContext(Dispatchers.IO) { api.getPurchases() })
-                purgeRemoved(context, old, fresh)
-                purchases = fresh
-                withContext(Dispatchers.IO) { writeCache(context, fresh) }
-                error = null
-            } catch (e: Exception) {
-                error = e.message
-            } finally {
-                loading = false
-            }
+            fetchAndMerge(previousList = purchases)
         }
     }
 
@@ -297,11 +328,28 @@ fun TicketsScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = { refresh() }, enabled = !loading) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .pointerInput(loading) {
+                            detectTapGestures(
+                                onTap = { if (!loading) refresh() },
+                                onLongPress = { includeExpired = true; refresh() }
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
-                        Icons.Rounded.Refresh,
+                        imageVector = Icons.Rounded.Refresh,
                         contentDescription = stringResource(R.string.cd_refresh),
                         modifier = Modifier.rotate(rotation)
+                    )
+                }
+                IconButton(onClick = onLogout) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ExitToApp,
+                        contentDescription = stringResource(R.string.cd_logout),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -310,7 +358,9 @@ fun TicketsScreen(
         Column(modifier = Modifier.padding(padding)) {
             androidx.compose.animation.AnimatedVisibility(loading) {
                 androidx.compose.material3.LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }
             if (!loading && valid.isEmpty()) {
@@ -345,8 +395,31 @@ fun TicketsScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(valid, key = { it.id }) { purchase ->
-                    val isValid = purchase.status.trim().equals("Ervenyes", ignoreCase = true)
+                    val isValid = purchase.isValidTicket
                     val isPass = purchase.isPassTicket()
+                    val nameMissing = purchase.name.isNullOrBlank() && !isPass
+                    val cardAlpha = if (nameMissing) 0.5f else 1f
+                    if (nameMissing) {
+                        LaunchedEffect(purchase.id) {
+                            val cached = withContext(Dispatchers.IO) {
+                                runCatching { TicketCache.loadName(context, purchase.id) }.getOrNull()
+                            }
+                            if (!cached.isNullOrBlank()) {
+                                nameOverrides[purchase.id] = cached
+                                return@LaunchedEffect
+                            }
+                            val n = runCatching {
+                                withContext(Dispatchers.IO) {
+                                    val d = api.getTicketDetails(purchase.id)
+                                    TicketCache.save(context, purchase.id, d)
+                                    d.ajanlatNev
+                                }
+                            }.getOrNull()
+                            if (!n.isNullOrBlank()) {
+                                nameOverrides[purchase.id] = n
+                            }
+                        }
+                    }
                     val cardColor = when {
                         !isValid -> MaterialTheme.colorScheme.surfaceContainerHighest
                         isPass -> MaterialTheme.colorScheme.primaryContainer
@@ -357,49 +430,12 @@ fun TicketsScreen(
                         isPass -> MaterialTheme.colorScheme.onPrimaryContainer
                         else -> MaterialTheme.colorScheme.onTertiaryContainer
                     }
-                    val shareAction: () -> Unit = {
-                        scope.launch {
-                            try {
-                                snackbar.show(context.getString(R.string.hint_img_download), isError = false)
-                                val details = api.getTicketDetails(purchase.id)
-                                val bizAzon =
-                                    details.ticketData?.bizonylatTechnikaiAzonosito
-                                if (bizAzon.isNullOrBlank()) {
-                                    snackbar.show(
-                                        context.getString(R.string.err_no_biz),
-                                        isError = true
-                                    )
-                                    return@launch
+                    val shareAction = remember(purchase.id, nameMissing) {
+                        {
+                            if (!nameMissing) {
+                                scope.launch {
+                                    performShareTicket(context, api, purchase, snackbar)
                                 }
-                                val expired =
-                                    parseIso(purchase.validTo)?.isBefore(LocalDateTime.now())
-                                        ?: false
-                                val result =
-                                    api.getServerJegyKep(
-                                        purchase.id,
-                                        bizAzon,
-                                        context,
-                                        expired = expired
-                                    )
-                                val bytes = result.imageBytes
-                                if (bytes == null) {
-                                    snackbar.show(
-                                        context.getString(R.string.fmt_download_fail, context.getString(friendlyError(result?.error))),
-                                        isError = true
-                                    )
-                                    return@launch
-                                }
-                                val name = "mavjegy_${purchase.id}.png"
-                                shareServerJegyKep(context, bytes, name)
-                                snackbar.show(
-                                    context.getString(R.string.info_share_ready),
-                                    isError = false
-                                )
-                            } catch (e: Exception) {
-                                snackbar.show(
-                                    context.getString(friendlyError(e.message ?: e.toString())),
-                                    isError = true
-                                )
                             }
                         }
                     }
@@ -421,8 +457,10 @@ fun TicketsScreen(
                             purchase = purchase,
                             onClick = { onOpenDetail(purchase) },
                             onLongClick = shareAction,
-                            modifier = Modifier.weight(1f),
-                            containerColor = cardColor
+                            modifier = Modifier.weight(1f).alpha(cardAlpha),
+                            containerColor = cardColor,
+                            enriching = nameMissing,
+                            displayName = purchase.name ?: nameOverrides[purchase.id]
                         )
                     }
                 }
@@ -439,75 +477,130 @@ private fun PurchaseCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
-    containerColor: Color
+    containerColor: Color,
+    enriching: Boolean = false,
+    displayName: String? = purchase.name
 ) {
-    val isValid = purchase.status.trim().equals("Ervenyes", ignoreCase = true)
+    val isValid = purchase.isValidTicket
     val isPass = purchase.isPassTicket()
-    Card(
-        shape = if (isValid) RoundedCornerShape(28.dp) else RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = if (!isValid) androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outline
-        ) else null,
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = modifier
-            .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+    val now = LocalDateTime.now()
+    val isExpired = parseIso(purchase.validTo)?.isBefore(now) ?: false
+    val priceBadgeColor = if (isExpired) MaterialTheme.colorScheme.errorContainer
+        else if (isPass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+    val priceTextColor = if (isExpired) MaterialTheme.colorScheme.error
+        else if (isPass) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary
+    Box(modifier = modifier.fillMaxWidth()) {
+        Card(
+            shape = if (isValid) RoundedCornerShape(28.dp) else RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = containerColor),
+            border = if (!isValid) androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline
+            ) else null,
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        color = if (isPass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                modifier = Modifier.padding(16.dp).heightIn(min = 84.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(
-                    imageVector = if (isPass)
-                        Icons.Rounded.CardMembership
-                    else
-                        Icons.Rounded.ConfirmationNumber,
-                    contentDescription = null,
-                    tint = if (isPass) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                // Pontos név – jegynél ha az API nem ad nevet, semmit nem írunk ki
-                val titleText = if (isPass) stringResource(R.string.title_pass) else purchase.name
-                if (!titleText.isNullOrBlank()) {
-                    Text(
-                        text = titleText,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            color = if (isPass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isPass)
+                            Icons.Rounded.CardMembership
+                        else
+                            Icons.Rounded.ConfirmationNumber,
+                        contentDescription = null,
+                        tint = if (isPass) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary,
+                        modifier = Modifier.size(26.dp)
                     )
                 }
-                ValiditySubtitle(purchase = purchase, isPass = isPass)
-            }
-            Surface(
-                shape = CircleShape,
-                color = if (isPass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
-            ) {
-                Text(
-                    text = if (purchase.currency == "HUF")
-                        stringResource(R.string.price_ft, purchase.amount)
-                    else
-                        stringResource(R.string.price_curr, purchase.amount, purchase.currency),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isPass) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (enriching && displayName.isNullOrBlank() && !isPass) {
+                        ExpressiveLoader(size = 16.dp)
+                    } else {
+                    // Pontos név – jegynél ha az API nem ad nevet, semmit nem írunk ki
+                    // Native, képernyő-dinamikus levágás: max 2 sor, utána „…"
+                    val titleText = displayName ?: if (isPass) stringResource(R.string.title_pass) else null
+                    if (!titleText.isNullOrBlank()) {
+                        Text(
+                            text = titleText,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    }
+                    ValiditySubtitle(purchase = purchase, isPass = isPass)
+                }
             }
         }
+        }
+        Surface(
+            shape = CircleShape,
+            color = priceBadgeColor,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(y = (-14).dp)
+        ) {
+            Text(
+                text = if (isExpired) stringResource(R.string.detail_expired)
+                else if (purchase.currency == "HUF") stringResource(R.string.price_ft, purchase.amount)
+                else stringResource(R.string.price_curr, purchase.amount, purchase.currency),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = priceTextColor,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
+        }
+    }
+}
+
+private suspend fun performShareTicket(
+    context: Context,
+    api: MavApi,
+    purchase: Purchase,
+    snackbar: com.domedav.mavjegy.ui.components.SnackbarState
+) {
+    try {
+        snackbar.show(context.getString(R.string.hint_img_download), isError = false)
+        val details = api.getTicketDetails(purchase.id)
+        val bizAzon = details.ticketData?.bizonylatTechnikaiAzonosito
+        if (bizAzon.isNullOrBlank()) {
+            snackbar.show(context.getString(R.string.err_no_biz), isError = true)
+            return
+        }
+        val expired = parseIso(purchase.validTo)?.isBefore(LocalDateTime.now()) ?: false
+        val result = api.getServerJegyKep(purchase.id, bizAzon, context, expired = expired)
+        val bytes = result.imageBytes
+        if (bytes == null) {
+            snackbar.show(
+                context.getString(R.string.fmt_download_fail, context.getString(friendlyError(result?.error))),
+                isError = true
+            )
+            return
+        }
+        val name = "mavjegy_${purchase.id}.png"
+        shareServerJegyKep(context, bytes, name)
+        snackbar.show(context.getString(R.string.info_share_ready), isError = false)
+    } catch (e: Exception) {
+        snackbar.show(
+            context.getString(friendlyError(e.message ?: e.toString())),
+            isError = true
+        )
     }
 }
 

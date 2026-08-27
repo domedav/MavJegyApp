@@ -38,6 +38,11 @@ data class Purchase(
 fun Purchase.isPassTicket(): Boolean =
     startStation == null || name?.contains("bérlet", ignoreCase = true) == true
 
+private const val VALID_PURCHASE_STATUS = "Ervenyes"
+
+val Purchase.isValidTicket: Boolean
+    get() = status.trim().equals(VALID_PURCHASE_STATUS, ignoreCase = true)
+
 data class TicketData(
     val serializedTicketData: String?,
     val jegySorszam: String?,
@@ -192,7 +197,12 @@ class MavApi(private val tokenStore: TokenStore) {
                     amount = o.priceAmount(),
                     currency = o.currencyKey(),
                     name = listOf("name", "Name", "Nev", "nev", "ajanlatNev", "title")
-                        .firstNotNullOfOrNull { k -> o.str(k) },
+                        .firstNotNullOfOrNull { k -> o.str(k) }
+                        ?: findStringKey(o, "ajanlatNev")
+                        ?: findStringKey(o, "name")
+                        ?: findStringKey(o, "nev")
+                        ?: findStringKey(o, "title")
+                        ?: findStringKey(o, "megnevezes"),
                     passHolderId = o.str("passHolderId")
                 )
             } ?: emptyList()).distinctBy { it.id }

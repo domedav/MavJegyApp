@@ -4,6 +4,8 @@ package com.domedav.mavjegy.ui.screens
 
 import com.domedav.mavjegy.R
 
+import com.domedav.mavjegy.ui.components.ExpressiveLoader
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -47,7 +49,6 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -445,9 +446,9 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                         .height(56.dp)
                                 ) {
                                     if (loading) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
+                                        ExpressiveLoader(
                                             color = MaterialTheme.colorScheme.onPrimary,
+                                            size = 20.dp,
                                             strokeWidth = 2.5.dp
                                         )
                                     } else {
@@ -609,9 +610,9 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     .height(56.dp)
                             ) {
                                 if (loading) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
+                                    ExpressiveLoader(
                                         color = MaterialTheme.colorScheme.onPrimary,
+                                        size = 20.dp,
                                         strokeWidth = 2.5.dp
                                     )
                                 } else {

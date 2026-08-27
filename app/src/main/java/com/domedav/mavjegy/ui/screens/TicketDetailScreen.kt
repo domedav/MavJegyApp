@@ -4,16 +4,13 @@ package com.domedav.mavjegy.ui.screens
 
 import com.domedav.mavjegy.R
 
+import com.domedav.mavjegy.ui.components.ExpressiveLoader
+
 import android.app.Activity
 import android.graphics.BitmapFactory
 import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,7 +44,6 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -68,8 +64,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -430,10 +424,7 @@ fun TicketDetailScreen(
                 ) {
                     when {
                         loadingDetails && details == null && errorMessage == null -> {
-                            CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                            )
+                            ExpressiveLoader()
                         }
 
                         errorMessage != null && !hasCached && details == null -> {
@@ -496,7 +487,7 @@ fun TicketDetailScreen(
                                 }
                             }
 
-                            showServerImage && loadingServerImage -> WavyLoadingIndicator()
+                            showServerImage && loadingServerImage -> ExpressiveLoader()
 
                             else -> {
                                 Text(
@@ -892,50 +883,6 @@ private fun formatBirthDate(raw: String): String {
 
 private fun titleFor(details: TicketDetails?): String? =
     details?.ajanlatNev?.takeIf { it.isNotBlank() }
-
-@Composable
-private fun WavyLoadingIndicator(modifier: Modifier = Modifier) {
-    // Material Expressive stílusú hullámos kör-indikátor
-    val color = MaterialTheme.colorScheme.primary
-    val twoPi = (2.0 * kotlin.math.PI).toFloat()
-    val infinite = rememberInfiniteTransition(label = "wavy")
-    val phase by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = twoPi,
-        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
-        label = "phase"
-    )
-    val progress by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing)),
-        label = "progress"
-    )
-
-    Canvas(modifier = modifier.size(56.dp)) {
-        val stroke = 5.5.dp.toPx()
-        val radius = size.minDimension / 2f - stroke * 2f
-        val amp = stroke * 1.15f
-        val sweepMax = twoPi * 0.72f
-        val start = (progress * twoPi * 2f) % twoPi
-        val path = Path()
-        var first = true
-        var angle = start
-        while (angle <= start + sweepMax) {
-            val wave = kotlin.math.sin(angle * 3f + phase)
-            val rr = radius + amp * wave
-            val x = center.x + rr * kotlin.math.cos(angle)
-            val y = center.y + rr * kotlin.math.sin(angle)
-            if (first) { path.moveTo(x, y); first = false } else path.lineTo(x, y)
-            angle += 0.055f
-        }
-        drawPath(
-            path,
-            color = color,
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
-        )
-    }
-}
 
 @Composable
 private fun OwnerDetailsDialog(

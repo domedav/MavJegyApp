@@ -78,6 +78,7 @@
     <string name="cd_photo_add">Fotó hozzáadása</string>
     <string name="cd_pw_hide">Jelszó elrejtése</string>
     <string name="cd_pw_show">Jelszó megjelenítése</string>
+    <string name="cd_logout">Kijelentkezés</string>
 
     <!-- Formázott szövegek -->
     <string name="fmt_birth">szül.: %s</string>
@@ -87,5 +88,5 @@
     <string name="fmt_forgot_sent">Új jelszót küldtünk a(z) %s címre</string>
     <string name="fmt_download_fail">Letöltés sikertelen: %s</string>
     <string name="price_ft">%.0f Ft</string>
-    <string name="price_curr">%.0f %s</string>
+    <string name="price_curr">%1$.0f %2$s</string>
 </resources>

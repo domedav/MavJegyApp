@@ -33,7 +33,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -111,7 +110,13 @@ class MainActivity : ComponentActivity() {
                         }
                         if (!ok && !tokenStore.hasCredentials()) loggedIn = false
                     }
-                    AppRoot(api)
+                    val onLogout: () -> Unit = remember {
+                        {
+                            tokenStore.clear()
+                            loggedIn = false
+                        }
+                    }
+                    AppRoot(api, onLogout = onLogout)
                 } else {
                     LoginScreen(
                         api = api,
@@ -150,7 +155,7 @@ fun RotatePrompt() {
 }
 
 @Composable
-fun AppRoot(api: MavApi) {
+fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(SettingsStore.getLastTab(context)) }
     LaunchedEffect(selectedTab) {
@@ -167,6 +172,17 @@ fun AppRoot(api: MavApi) {
     val webView = remember { mutableStateOf<WebView?>(null) }
     DisposableEffect(Unit) {
         onDispose { webView.value?.destroy() }
+    }
+
+    val doLogout: () -> Unit = remember(onLogout) {
+        {
+            webView.value?.destroy()
+            webView.value = null
+            runCatching { java.io.File(context.filesDir, "web_session.json").delete() }
+            android.webkit.CookieManager.getInstance().removeAllCookies(null)
+            android.webkit.CookieManager.getInstance().flush()
+            onLogout()
+        }
     }
 
     if (detailPurchase != null) {
@@ -195,7 +211,8 @@ fun AppRoot(api: MavApi) {
                 else -> TicketsScreen(
                     api = api,
                     onOpenDetail = { detailPurchase = it },
-                    onNavigateToBuy = { selectedTab = 1 }
+                    onNavigateToBuy = { selectedTab = 1 },
+                    onLogout = doLogout
                 )
             }
         }
