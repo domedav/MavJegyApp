@@ -19,9 +19,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
@@ -53,14 +53,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -72,8 +71,9 @@ import com.domedav.mavjegy.data.Purchase
 import com.domedav.mavjegy.data.TicketCache
 import com.domedav.mavjegy.data.isPassTicket
 import com.domedav.mavjegy.data.isValidTicket
-import com.domedav.mavjegy.ui.components.ExpressiveLoader
+import com.domedav.mavjegy.ui.components.shimmerPlaceholder
 import com.domedav.mavjegy.util.friendlyError
+import com.domedav.mavjegy.util.isOnline
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -86,6 +86,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+
+private fun String?.isRealName(): Boolean = !isNullOrBlank() && this != "null"
 
 @Composable
 private fun ValiditySubtitle(purchase: Purchase, isPass: Boolean) {
@@ -241,7 +243,6 @@ fun TicketsScreen(
     var purchases by remember { mutableStateOf<List<Purchase>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     var includeExpired by remember { mutableStateOf(false) }
-    val nameOverrides = remember { mutableStateMapOf<String, String>() }
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
@@ -266,14 +267,22 @@ fun TicketsScreen(
     suspend fun fetchAndMerge(previousList: List<Purchase>): List<Purchase> {
         loading = true
         try {
+            if (!isOnline(context) && includeExpired) {
+                error = context.getString(R.string.err_no_internet)
+                return previousList
+            }
             val fresh = keepAlive(withContext(Dispatchers.IO) { api.getPurchases() }, includeExpired)
             purgeRemoved(context, previousList, fresh)
             val merged = fresh.map { p ->
-                if (!p.name.isNullOrBlank()) p
+                if (p.name.isRealName()) p
                 else TicketCache.loadName(context, p.id)?.let { p.copy(name = it) } ?: p
             }
             purchases = merged
-            withContext(Dispatchers.IO) { writeCache(context, merged) }
+            withContext(Dispatchers.IO) {
+                writeCache(context, merged.filter { p ->
+                    parseIso(p.validTo)?.isBefore(LocalDateTime.now()) != true
+                })
+            }
             error = null
             return merged
         } catch (e: Exception) {
@@ -397,26 +406,31 @@ fun TicketsScreen(
                 items(valid, key = { it.id }) { purchase ->
                     val isValid = purchase.isValidTicket
                     val isPass = purchase.isPassTicket()
-                    val nameMissing = purchase.name.isNullOrBlank() && !isPass
-                    val cardAlpha = if (nameMissing) 0.5f else 1f
+                    val isExpired = parseIso(purchase.validTo)?.isBefore(LocalDateTime.now()) ?: false
+                    val nameMissing = !purchase.name.isRealName() && !isPass
                     if (nameMissing) {
                         LaunchedEffect(purchase.id) {
-                            val cached = withContext(Dispatchers.IO) {
-                                runCatching { TicketCache.loadName(context, purchase.id) }.getOrNull()
-                            }
-                            if (!cached.isNullOrBlank()) {
-                                nameOverrides[purchase.id] = cached
-                                return@LaunchedEffect
+                            val mem = TicketCache.getNameMem(purchase.id)
+                            if (mem.isRealName()) return@LaunchedEffect
+                            if (isExpired && !isOnline(context)) return@LaunchedEffect
+                            if (!isExpired) {
+                                val cached = withContext(Dispatchers.IO) {
+                                    runCatching { TicketCache.loadName(context, purchase.id) }.getOrNull()
+                                }
+                                if (cached.isRealName()) {
+                                    TicketCache.putNameMem(purchase.id, cached)
+                                    return@LaunchedEffect
+                                }
                             }
                             val n = runCatching {
                                 withContext(Dispatchers.IO) {
                                     val d = api.getTicketDetails(purchase.id)
-                                    TicketCache.save(context, purchase.id, d)
+                                    if (!isExpired) TicketCache.save(context, purchase.id, d)
                                     d.ajanlatNev
                                 }
                             }.getOrNull()
-                            if (!n.isNullOrBlank()) {
-                                nameOverrides[purchase.id] = n
+                            if (n.isRealName()) {
+                                TicketCache.putNameMem(purchase.id, n)
                             }
                         }
                     }
@@ -457,10 +471,10 @@ fun TicketsScreen(
                             purchase = purchase,
                             onClick = { onOpenDetail(purchase) },
                             onLongClick = shareAction,
-                            modifier = Modifier.weight(1f).alpha(cardAlpha),
+                            modifier = Modifier.weight(1f),
                             containerColor = cardColor,
                             enriching = nameMissing,
-                            displayName = purchase.name ?: nameOverrides[purchase.id]
+                            displayName = (purchase.name ?: TicketCache.getNameMem(purchase.id)).takeIf { it.isRealName() }
                         )
                     }
                 }
@@ -487,7 +501,7 @@ private fun PurchaseCard(
     val isExpired = parseIso(purchase.validTo)?.isBefore(now) ?: false
     val priceBadgeColor = if (isExpired) MaterialTheme.colorScheme.errorContainer
         else if (isPass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
-    val priceTextColor = if (isExpired) MaterialTheme.colorScheme.error
+    val priceTextColor = if (isExpired) MaterialTheme.colorScheme.onErrorContainer
         else if (isPass) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary
     Box(modifier = modifier.fillMaxWidth()) {
         Card(
@@ -529,11 +543,16 @@ private fun PurchaseCard(
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     if (enriching && displayName.isNullOrBlank() && !isPass) {
-                        ExpressiveLoader(size = 16.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.68f)
+                                .height(14.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .shimmerPlaceholder()
+                        )
                     } else {
-                    // Pontos név – jegynél ha az API nem ad nevet, semmit nem írunk ki
-                    // Native, képernyő-dinamikus levágás: max 2 sor, utána „…"
-                    val titleText = displayName ?: if (isPass) stringResource(R.string.title_pass) else null
+                    val titleText = displayName?.takeIf { it.isRealName() }
+                        ?: if (isPass) stringResource(R.string.title_pass) else null
                     if (!titleText.isNullOrBlank()) {
                         Text(
                             text = titleText,
@@ -550,11 +569,11 @@ private fun PurchaseCard(
         }
         }
         Surface(
-            shape = CircleShape,
+            shape = RoundedCornerShape(12.dp),
             color = priceBadgeColor,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .offset(y = (-14).dp)
+                .padding(top = 8.dp, end = 8.dp)
         ) {
             Text(
                 text = if (isExpired) stringResource(R.string.detail_expired)

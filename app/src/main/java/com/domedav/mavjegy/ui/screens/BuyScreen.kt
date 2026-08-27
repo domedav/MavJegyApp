@@ -3,12 +3,10 @@ package com.domedav.mavjegy.ui.screens
 import com.domedav.mavjegy.R
 
 import android.annotation.SuppressLint
-import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.domedav.mavjegy.util.isOnline
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,13 +49,6 @@ import com.domedav.mavjegy.ui.components.ExpressiveLoader
 import kotlinx.coroutines.delay
 
 internal const val BUY_URL = "https://jegy.mav.hu"
-
-fun isOnline(context: Context): Boolean {
-    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        ?: return false
-    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable

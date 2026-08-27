@@ -221,8 +221,10 @@ fun TicketDetailScreen(
         try {
             val fetched = api.getTicketDetails(purchase.id)
             details = fetched
-            withContext(Dispatchers.IO) {
-                runCatching { TicketCache.save(context, purchase.id, fetched) }
+            if (!expired) {
+                withContext(Dispatchers.IO) {
+                    runCatching { TicketCache.save(context, purchase.id, fetched) }
+                }
             }
             errorMessage = null
         } catch (e: Exception) {
@@ -324,7 +326,6 @@ fun TicketDetailScreen(
                 fun requestServerJegyKep() {
                     if (loadingServerImage) return
                     if (serverFetchStarted && serverImageBitmap == null) {
-                        // korábbi próbálkozás sikertelen volt -> engedélyezzük az újrapróbálást
                         serverFetchStarted = false
                     }
                     if (serverFetchStarted) return
@@ -333,7 +334,7 @@ fun TicketDetailScreen(
                     scope.launch {
                         val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito
                             val result = runCatching {
-                            api.getServerJegyKep(purchase.id, bizAzon, context, expired = expired)
+                            api.getServerJegyKep(purchase.id, bizAzon, context)
                         }.getOrNull()
                         loadingServerImage = false
                         val bytes = result?.imageBytes
@@ -360,19 +361,14 @@ fun TicketDetailScreen(
                 }
 
                 // Első nyitásra háttérben letölti + MENTI a jegyképet (utána offline is megvan)
-                LaunchedEffect(purchase.id, serialized, expired) {
-                    if (expired) {
-                        com.domedav.mavjegy.data.OfflineStore.deleteServerJegyKep(context, purchase.id)
-                        com.domedav.mavjegy.data.OfflineStore.deleteServerBarcode(context, purchase.id)
-                        return@LaunchedEffect
-                    }
+                LaunchedEffect(purchase.id, serialized) {
                     if (!serialized.isNullOrBlank()) {
                         requestServerJegyKep()
                     }
                 }
 
                 LaunchedEffect(showServerImage) {
-                    if (showServerImage && serverImageBitmap == null && !expired) requestServerJegyKep()
+                    if (showServerImage && serverImageBitmap == null) requestServerJegyKep()
                 }
 
                 LaunchedEffect(serialized, serverBarcodeText, barcodeTargetPx, fetchTrigger, expired) {
@@ -447,25 +443,9 @@ fun TicketDetailScreen(
                             }
                         }
 
-                        expired -> {
-                            Surface(
-                                shape = RoundedCornerShape(24.dp),
-                                color = MaterialTheme.colorScheme.errorContainer
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.detail_expired),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
-                                )
-                            }
-                        }
-
                         else -> {
                             val simg = serverImageBitmap
                             when {
-                            // SZERVER JEGYKÉP (dupla koppintással előhívott fallback)
                             showServerImage && simg != null -> {
                                 Box(
                                     modifier = Modifier.fillMaxWidth(),
@@ -484,17 +464,53 @@ fun TicketDetailScreen(
                                                 translationY = offsetY ?: 0f
                                             }
                                     )
+                                    if (expired) {
+                                        Box(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .background(Color.Black.copy(alpha = 0.45f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(24.dp),
+                                                color = MaterialTheme.colorScheme.errorContainer
+                                            ) {
+                                                Text(
+                                                    text = stringResource(R.string.detail_expired),
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
                             showServerImage && loadingServerImage -> ExpressiveLoader()
 
                             else -> {
-                                Text(
-                                    text = stringResource(R.string.detail_img_unavailable),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                if (expired) {
+                                    Surface(
+                                        shape = RoundedCornerShape(24.dp),
+                                        color = MaterialTheme.colorScheme.errorContainer
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.detail_expired),
+                                            style = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = stringResource(R.string.detail_img_unavailable),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                             }
                         }

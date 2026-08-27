@@ -8,6 +8,7 @@ import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
 
 @Serializable
 data class CachedTicketDetails(
@@ -23,6 +24,15 @@ data class CachedTicketDetails(
 object TicketCache {
     private val json = Json { ignoreUnknownKeys = true }
     private const val DIR = "ticket_cache"
+
+    private val memoryNameCache = ConcurrentHashMap<String, String>()
+
+    fun getNameMem(id: String): String? = memoryNameCache[id]
+
+    fun putNameMem(id: String, name: String?) {
+        if (!name.isNullOrBlank() && name != "null") memoryNameCache[id] = name
+        else memoryNameCache.remove(id)
+    }
 
     // Thread-safe, immutable DateTimeFormatter instances – created once
     private val isoFormatters = listOf(

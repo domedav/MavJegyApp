@@ -648,7 +648,7 @@ class MavApi(private val tokenStore: TokenStore) {
     }
 
     private fun JsonObject.str(key: String): String? =
-        (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { !it.content.isBlank() }?.content
+        (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { !it.content.isBlank() && it.content != "null" }?.content
 
     private fun JsonObject.bool(key: String): Boolean =
         (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
