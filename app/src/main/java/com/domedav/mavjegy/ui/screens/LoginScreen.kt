@@ -78,8 +78,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.util.friendlyError
+import com.domedav.mavjegy.util.isOnline
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 private val CookieShape = RoundedCornerShape(16.dp)
 private val FieldShape = RoundedCornerShape(20.dp)
@@ -131,17 +134,25 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
 
     val submitLogin: () -> Unit = submitLogin@{
         if (loading || email.isBlank() || password.isBlank()) return@submitLogin
+        if (!isOnline(context)) {
+            error = R.string.err_no_internet
+            return@submitLogin
+        }
         focusManager.clearFocus()
         loading = true
         error = null
         scope.launch {
             try {
-                val result = api.login(email.trim(), password)
+                val result = withTimeout(15_000) { api.login(email.trim(), password) }
                 if (result.isSuccess) {
                     onLoggedIn()
                 } else {
                     error = friendlyError(result.exceptionOrNull()?.message)
                 }
+            } catch (e: TimeoutCancellationException) {
+                error = R.string.err_no_internet
+            } catch (e: Exception) {
+                error = friendlyError(e.message)
             } finally {
                 loading = false
             }
@@ -171,12 +182,16 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
             error = R.string.err_invalid_birth
             return@submitRegistration
         }
+        if (!isOnline(context)) {
+            error = R.string.err_no_internet
+            return@submitRegistration
+        }
         focusManager.clearFocus()
         loading = true
         error = null
         scope.launch {
             try {
-                val result = api.register(regEmail.trim(), regLastName.trim(), regFirstName.trim(), birthIso, regPassword)
+                val result = withTimeout(15_000) { api.register(regEmail.trim(), regLastName.trim(), regFirstName.trim(), birthIso, regPassword) }
                 result.fold(
                     onSuccess = { _ ->
                         info = context.getString(R.string.info_register_ok)
@@ -184,6 +199,10 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                     },
                     onFailure = { e -> error = friendlyError(e.message) }
                 )
+            } catch (e: TimeoutCancellationException) {
+                error = R.string.err_no_internet
+            } catch (e: Exception) {
+                error = friendlyError(e.message)
             } finally {
                 loading = false
             }
@@ -192,11 +211,15 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
 
     val sendForgotPassword: () -> Unit = sendForgot@{
         if (loading || forgotEmail.isBlank()) return@sendForgot
+        if (!isOnline(context)) {
+            error = R.string.err_no_internet
+            return@sendForgot
+        }
         loading = true
         error = null
         scope.launch {
             try {
-                val result = api.forgotPassword(forgotEmail.trim())
+                val result = withTimeout(15_000) { api.forgotPassword(forgotEmail.trim()) }
                 result.fold(
                     onSuccess = { msg ->
                         showForgotDialog = false
@@ -204,6 +227,10 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                     },
                     onFailure = { e -> error = friendlyError(e.message) }
                 )
+            } catch (e: TimeoutCancellationException) {
+                error = R.string.err_no_internet
+            } catch (e: Exception) {
+                error = friendlyError(e.message)
             } finally {
                 loading = false
             }
@@ -369,7 +396,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     shape = CookieShape,
                                     color = MaterialTheme.colorScheme.tertiaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.clickable {
+                                    modifier = Modifier.clickable(enabled = !loading) {
                                         focusManager.clearFocus()
                                         error = null
                                         step = 0
@@ -381,14 +408,14 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                         modifier = Modifier.padding(10.dp)
                                     )
                                 }
-                                 Spacer(modifier = Modifier.size(12.dp))
-                                 Text(
-                                      text = stringResource(R.string.title_password),
+                                  Spacer(modifier = Modifier.size(12.dp))
+                                  Text(
+                                       text = stringResource(R.string.title_password),
                                       style = MaterialTheme.typography.titleLarge,
-                                     fontWeight = FontWeight.Bold,
-                                     color = MaterialTheme.colorScheme.onSurface
-                                 )
-                             }
+                                      fontWeight = FontWeight.Bold,
+                                      color = MaterialTheme.colorScheme.onSurface
+                                  )
+                              }
                              Spacer(modifier = Modifier.height(6.dp))
                              StaggeredAppear(index = 1) {
                                  Text(
@@ -447,7 +474,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                 ) {
                                     if (loading) {
                                         ExpressiveLoader(
-                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             size = 20.dp,
                                             strokeWidth = 2.5.dp
                                         )
@@ -469,7 +496,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     shape = CookieShape,
                                     color = MaterialTheme.colorScheme.tertiaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.clickable {
+                                    modifier = Modifier.clickable(enabled = !loading) {
                                         focusManager.clearFocus()
                                         error = null
                                         step = 0
@@ -611,7 +638,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                             ) {
                                 if (loading) {
                                     ExpressiveLoader(
-                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         size = 20.dp,
                                         strokeWidth = 2.5.dp
                                     )
@@ -651,7 +678,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
         }
     }
 
-    BackHandler(enabled = step > 0) {
+    BackHandler(enabled = step > 0 && !loading) {
         focusManager.clearFocus()
         error = null
         step = 0
