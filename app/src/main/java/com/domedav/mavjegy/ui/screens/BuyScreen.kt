@@ -68,21 +68,23 @@ fun BuyScreen(webViewState: MutableState<WebView?>) {
     var online by remember { mutableStateOf(isOnline(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    var pageLoaded by remember { mutableStateOf(false) }
+    // Első betöltés: min 450ms + oldal betöltése. Tab-váltás: azonnal.
+    val isFirstLoad = webViewState.value == null
     var minDelayDone by remember { mutableStateOf(false) }
+    var pageLoaded by remember { mutableStateOf(false) }
 
-    // Tab-váltás után: ha a WebView már létezik és betöltött, ne várjunk az onPageFinished-re
     LaunchedEffect(Unit) {
-        if (webViewState.value != null) {
-            pageLoaded = true
+        if (!isFirstLoad) {
+            showLoader = false
+        } else {
+            delay(450)
+            minDelayDone = true
         }
-        delay(450)
-        minDelayDone = true
     }
 
-    LaunchedEffect(minDelayDone, pageLoaded) {
-        if (minDelayDone && pageLoaded) {
-            showLoader = false
+    if (isFirstLoad) {
+        LaunchedEffect(minDelayDone, pageLoaded) {
+            if (minDelayDone && pageLoaded) showLoader = false
         }
     }
 
