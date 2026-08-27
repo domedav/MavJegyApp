@@ -334,9 +334,15 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                         detectDragGestures(
                             onDragStart = { },
                             onDragEnd = {
-                                // snap: amelyik ikonhoz közelebb ért
-                                val target = if (dragOffset.value > itemSizePx / 2f) 1 else 0
-                                selectedTab = target
+                                val targetOffset = if (dragOffset.value > itemSizePx / 2f) itemSizePx else 0f
+                                val newTab = if (targetOffset == itemSizePx) 1 else 0
+                                scope.launch {
+                                    dragOffset.animateTo(
+                                        targetOffset,
+                                        spring(dampingRatio = Spring.DampingRatioLowBouncy)
+                                    )
+                                    selectedTab = newTab
+                                }
                             }
                         ) { change, dragAmount ->
                             change.consume()
