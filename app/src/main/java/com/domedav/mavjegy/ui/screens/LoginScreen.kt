@@ -72,6 +72,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.domedav.mavjegy.data.MavApi
+import com.domedav.mavjegy.util.friendlyError
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -133,7 +134,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                 if (result.isSuccess) {
                     onLoggedIn()
                 } else {
-                    error = result.exceptionOrNull()?.message ?: "Sikertelen bejelentkezés"
+                    error = friendlyError(result.exceptionOrNull()?.message)
                 }
             } finally {
                 loading = false
@@ -175,7 +176,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                         info = "Regisztráció sikeres! A megerősítéshez kövesd az emailben kapott információkat."
                         step = 0
                     },
-                    onFailure = { e -> error = e.message ?: "Sikertelen regisztráció" }
+                    onFailure = { e -> error = friendlyError(e.message) }
                 )
             } finally {
                 loading = false
@@ -195,7 +196,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                         showForgotDialog = false
                         info = msg ?: "Új jelszó elküldve a(z) ${forgotEmail.trim()} címre"
                     },
-                    onFailure = { e -> error = e.message ?: "Sikertelen kérés" }
+                    onFailure = { e -> error = friendlyError(e.message) }
                 )
             } finally {
                 loading = false
@@ -633,7 +634,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                     // Hiba snackbar – error színű
                     LaunchedEffect(error) {
                         error?.let {
-                            snackbar.show(it, isError = true)
+                            snackbar.show(friendlyError(it), isError = true)
                             error = null
                         }
                     }

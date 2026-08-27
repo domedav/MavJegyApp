@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -59,6 +61,7 @@ import com.domedav.mavjegy.data.MavApi
 import com.domedav.mavjegy.data.Purchase
 import com.domedav.mavjegy.data.TicketCache
 import com.domedav.mavjegy.data.isPassTicket
+import com.domedav.mavjegy.util.friendlyError
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -271,7 +274,7 @@ fun TicketsScreen(
     val snackbar = com.domedav.mavjegy.ui.components.LocalSnackbar.current
     LaunchedEffect(error) {
         error?.let {
-            snackbar.show("Hiba: $it", isError = true)
+            snackbar.show(friendlyError(it), isError = true)
             error = null
         }
     }
@@ -378,7 +381,7 @@ fun TicketsScreen(
                                 val bytes = result.imageBytes
                                 if (bytes == null) {
                                     snackbar.show(
-                                        "Letöltés sikertelen: ${result.error ?: "nincs kép"}",
+                                        "Letöltés sikertelen: ${friendlyError(result?.error)}",
                                         isError = true
                                     )
                                     return@launch
@@ -391,7 +394,7 @@ fun TicketsScreen(
                                 )
                             } catch (e: Exception) {
                                 snackbar.show(
-                                    "Hiba: ${e.message ?: e}",
+                                    friendlyError(e.message ?: e.toString()),
                                     isError = true
                                 )
                             }
@@ -410,6 +413,7 @@ fun TicketsScreen(
                                 tint = shareTint
                             )
                         }
+                        Spacer(modifier = Modifier.width(12.dp))
                         PurchaseCard(
                             purchase = purchase,
                             onClick = { onOpenDetail(purchase) },

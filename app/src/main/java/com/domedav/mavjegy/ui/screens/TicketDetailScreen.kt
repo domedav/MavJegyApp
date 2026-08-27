@@ -91,6 +91,7 @@ import com.domedav.mavjegy.data.TicketDetails
 import com.domedav.mavjegy.data.isPassTicket
 import com.domedav.mavjegy.ui.components.LocalSnackbar
 import com.domedav.mavjegy.util.BarcodeGenerator
+import com.domedav.mavjegy.util.friendlyError
 import com.domedav.mavjegy.util.PassOwnerPrefs
 import com.domedav.mavjegy.util.TicketDecoder
 import com.domedav.mavjegy.util.TicketOwner
@@ -352,11 +353,10 @@ fun TicketDetailScreen(
                         }
                         if (bmp == null) {
                             // sikertelen: engedjük az újrapróbálást, és ha kép-nézetben voltunk,
-                            // szóljunk + térjünk vissza Aztec-re
+                            // szóljunk (ne váltsunk Aztec-re)
                             serverFetchStarted = false
                             if (showServerImage) {
-                                snackbar.show(result?.error ?: "Jegykép nem elérhető", isError = true)
-                                showServerImage = false
+                                snackbar.show(friendlyError(result?.error) ?: "Jegykép nem elérhető", isError = true)
                             }
                         }
                     }
@@ -409,29 +409,6 @@ fun TicketDetailScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                // DUPLAKOPPINTÁS KIKAPCSOLVA (félkész feature) – egyelőre ne csináljon semmit
-//                                onDoubleTap = {
-//                                    when {
-//                                        showServerImage -> showServerImage = false
-//                                        serverImageBitmap != null -> showServerImage = true
-//                                        else -> {
-//                                            // töltőnézet + on-demand letöltés (siker után kép jelenik meg)
-//                                            showServerImage = true
-//                                            requestServerJegyKep()
-//                                        }
-//                                    }
-//                                }
-                                onTap = {
-                                    scope.launch {
-                                        if (serverImageBitmap == null && !expired) requestServerJegyKep()
-                                        showServerImage = !showServerImage
-                                        SettingsStore.setDetailPreferServerImage(context, showServerImage)
-                                    }
-                                }
-                            )
-                        }
                         .pointerInput(displaySize, zoneInnerW, showServerImage, zoneW) {
                             val baseForMode = if (showServerImage) zoneW else displaySize
                             detectTransformGestures { _, pan, zoom, _ ->
@@ -519,34 +496,11 @@ fun TicketDetailScreen(
                             showServerImage && loadingServerImage -> WavyLoadingIndicator()
 
                             else -> {
-                                val bitmap = barcodeBitmap
-                                when {
-                                    bitmap != null -> Image(
-                                    bitmap = bitmap,
-                                    contentDescription = "Vonalkód",
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .aspectRatio(1f)
-                                        .width(with(density) { displaySize.toDp() })
-                                        .graphicsLayer {
-                                            scaleX = scale
-                                            scaleY = scale
-                                            translationX = offsetX
-                                            translationY = offsetY ?: 0f
-                                        }
-                                )
-
-                                generatingBarcode -> CircularProgressIndicator(
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                                )
-
-                                else -> Text(
-                                    text = "Vonalkód nem elérhető",
+                                Text(
+                                    text = "Jegykép nem elérhető",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                }
                             }
                             }
                         }
