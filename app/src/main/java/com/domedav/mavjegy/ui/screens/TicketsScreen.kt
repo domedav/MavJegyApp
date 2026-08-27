@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
@@ -473,8 +474,7 @@ fun TicketsScreen(
                             onLongClick = shareAction,
                             modifier = Modifier.weight(1f),
                             containerColor = cardColor,
-                            enriching = nameMissing,
-                            displayName = (purchase.name ?: TicketCache.getNameMem(purchase.id)).takeIf { it.isRealName() }
+                            enriching = nameMissing
                         )
                     }
                 }
@@ -493,8 +493,8 @@ private fun PurchaseCard(
     modifier: Modifier = Modifier,
     containerColor: Color,
     enriching: Boolean = false,
-    displayName: String? = purchase.name
 ) {
+    val displayName = (purchase.name ?: TicketCache.getNameMem(purchase.id)).takeIf { it.isRealName() }
     val isValid = purchase.isValidTicket
     val isPass = purchase.isPassTicket()
     val now = LocalDateTime.now()
@@ -569,11 +569,11 @@ private fun PurchaseCard(
         }
         }
         Surface(
-            shape = RoundedCornerShape(12.dp),
+            shape = CircleShape,
             color = priceBadgeColor,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 8.dp, end = 8.dp)
+                .offset(y = (-14).dp)
         ) {
             Text(
                 text = if (isExpired) stringResource(R.string.detail_expired)
