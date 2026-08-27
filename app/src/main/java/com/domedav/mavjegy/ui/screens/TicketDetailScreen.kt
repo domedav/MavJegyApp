@@ -10,7 +10,6 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -18,7 +17,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,7 +51,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -89,6 +89,7 @@ import com.domedav.mavjegy.data.Purchase
 import com.domedav.mavjegy.data.TicketCache
 import com.domedav.mavjegy.data.TicketDetails
 import com.domedav.mavjegy.data.isPassTicket
+import com.domedav.mavjegy.ui.components.LocalSnackbar
 import com.domedav.mavjegy.util.BarcodeGenerator
 import com.domedav.mavjegy.util.PassOwnerPrefs
 import com.domedav.mavjegy.util.TicketDecoder
@@ -98,7 +99,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -183,12 +183,12 @@ fun TicketDetailScreen(
 
     val expired = isPurchaseExpired(purchase)
 
-    var showSwipeHint by remember { mutableStateOf(false) }
+    val snackbar = LocalSnackbar.current
 
     val pageOffsetY = remember { Animatable(0f) }
     val pageScale = remember { Animatable(1f) }
     val screenH = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
-    val minOffsetToClose = screenH / 5f
+    val minOffsetToClose = screenH / 8f
 
     // Szerkesztett fotó (ha van) a hash-alapú cache-ből
     var customPhotoBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
@@ -204,13 +204,9 @@ fun TicketDetailScreen(
     val displayPhotoBitmap = customPhotoBitmap ?: photoBitmap
 
     // Hibák snackbarban
-    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
-
     LaunchedEffect(Unit) {
         if (!SettingsStore.getHasSwipedBack(context)) {
-            showSwipeHint = true
-            kotlinx.coroutines.delay(6000)
-            showSwipeHint = false
+            snackbar.show("Pöccintsen az alsó sávon felfelé vagy lefelé a visszalépéshez", isError = false)
         }
     }
 
@@ -250,22 +246,6 @@ fun TicketDetailScreen(
                 scaleY = pageScale.value
             }
     ) {
-        androidx.compose.material3.SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .zIndex(2f)
-        )
-        AnimatedVisibility(
-            visible = showSwipeHint,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .zIndex(3f)
-        ) {
-            Snackbar { Text("Pöccintsen az alsó sávon felfelé vagy lefelé a visszalépéshez") }
-        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -375,7 +355,7 @@ fun TicketDetailScreen(
                             // szóljunk + térjünk vissza Aztec-re
                             serverFetchStarted = false
                             if (showServerImage) {
-                                snackbarHostState.showSnackbar(result?.error ?: "Jegykép nem elérhető")
+                                snackbar.show(result?.error ?: "Jegykép nem elérhető", isError = true)
                                 showServerImage = false
                             }
                         }
@@ -575,34 +555,34 @@ fun TicketDetailScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragStart = {},
-                            onDragEnd = {
-                                scope.launch {
-                                    if (kotlin.math.abs(pageOffsetY.value) > minOffsetToClose) {
-                                        val dir = if (pageOffsetY.value >= 0f) 1f else -1f
-                                        pageOffsetY.animateTo(dir * screenH, tween(250))
-                                        pageScale.animateTo(0.85f, tween(250))
-                                        SettingsStore.setHasSwipedBack(context, true)
-                                        onBack()
-                                    } else {
-                                        pageOffsetY.animateTo(0f, tween(200))
-                                        pageScale.animateTo(1f, tween(200))
-                                    }
-                                }
-                            },
-                            onVerticalDrag = { _, dragAmount ->
-                                scope.launch {
-                                    val ny = (pageOffsetY.value + dragAmount).coerceIn(-screenH, screenH)
-                                    pageOffsetY.snapTo(ny)
-                                    pageScale.snapTo(
-                                        (1f - kotlin.math.abs(ny) / (screenH * 0.9f)).coerceIn(0.85f, 1f)
-                                    )
+                    .draggable(
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { delta ->
+                            scope.launch {
+                                val ny = (pageOffsetY.value + delta).coerceIn(-screenH, screenH)
+                                pageOffsetY.snapTo(ny)
+                                pageScale.snapTo(
+                                    (1f - kotlin.math.abs(ny) / (screenH * 0.9f)).coerceIn(0.85f, 1f)
+                                )
+                            }
+                        },
+                        onDragStopped = { velocity ->
+                            scope.launch {
+                                if (kotlin.math.abs(pageOffsetY.value) > minOffsetToClose
+                                    || kotlin.math.abs(velocity) > 1000f
+                                ) {
+                                    val dir = if (pageOffsetY.value >= 0f) 1f else -1f
+                                    pageOffsetY.animateTo(dir * screenH, tween(250))
+                                    pageScale.animateTo(0.85f, tween(250))
+                                    SettingsStore.setHasSwipedBack(context, true)
+                                    onBack()
+                                } else {
+                                    pageOffsetY.animateTo(0f, tween(200))
+                                    pageScale.animateTo(1f, tween(200))
                                 }
                             }
-                        )
-                    }
+                        }
+                    )
             ) {
                 details?.let { d ->
                     OwnerAndValidityPanel(

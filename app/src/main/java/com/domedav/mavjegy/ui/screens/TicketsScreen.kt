@@ -27,12 +27,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.CardMembership
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material.icons.rounded.Train
+import androidx.compose.material.icons.rounded.ConfirmationNumber
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -314,56 +315,85 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(valid, key = { it.id }) { purchase ->
-                    PurchaseCard(
-                        purchase = purchase,
-                        onClick = { onOpenDetail(purchase) },
-                        onLongClick = {
-                            scope.launch {
-                                try {
-                                    snackbar.show("Jegykép letöltése…", isError = false)
-                                    val details = api.getTicketDetails(purchase.id)
-                                    val bizAzon =
-                                        details.ticketData?.bizonylatTechnikaiAzonosito
-                                    if (bizAzon.isNullOrBlank()) {
-                                        snackbar.show(
-                                            "Nincs bizonylat-azonosító a jegyhez",
-                                            isError = true
-                                        )
-                                        return@launch
-                                    }
-                                    val expired =
-                                        parseIso(purchase.validTo)?.isBefore(LocalDateTime.now())
-                                            ?: false
-                                    val result =
-                                        api.getServerJegyKep(
-                                            purchase.id,
-                                            bizAzon,
-                                            context,
-                                            expired = expired
-                                        )
-                                    val bytes = result.imageBytes
-                                    if (bytes == null) {
-                                        snackbar.show(
-                                            "Letöltés sikertelen: ${result.error ?: "nincs kép"}",
-                                            isError = true
-                                        )
-                                        return@launch
-                                    }
-                                    val name = "mavjegy_${purchase.id}.png"
-                                    shareServerJegyKep(context, bytes, name)
-    snackbar.show(
-        "A jegy megosztásra kész",
-        isError = false
-    )
-                                } catch (e: Exception) {
+                    val isValid = purchase.status.trim().equals("Ervenyes", ignoreCase = true)
+                    val isPass = purchase.isPassTicket()
+                    val cardColor = when {
+                        !isValid -> MaterialTheme.colorScheme.surfaceContainerHighest
+                        isPass -> MaterialTheme.colorScheme.primaryContainer
+                        else -> MaterialTheme.colorScheme.tertiaryContainer
+                    }
+                    val shareTint = when {
+                        !isValid -> MaterialTheme.colorScheme.onSurfaceVariant
+                        isPass -> MaterialTheme.colorScheme.onPrimaryContainer
+                        else -> MaterialTheme.colorScheme.onTertiaryContainer
+                    }
+                    val shareAction: () -> Unit = {
+                        scope.launch {
+                            try {
+                                snackbar.show("Jegykép letöltése…", isError = false)
+                                val details = api.getTicketDetails(purchase.id)
+                                val bizAzon =
+                                    details.ticketData?.bizonylatTechnikaiAzonosito
+                                if (bizAzon.isNullOrBlank()) {
                                     snackbar.show(
-                                        "Hiba: ${e.message ?: e}",
+                                        "Nincs bizonylat-azonosító a jegyhez",
                                         isError = true
                                     )
+                                    return@launch
                                 }
+                                val expired =
+                                    parseIso(purchase.validTo)?.isBefore(LocalDateTime.now())
+                                        ?: false
+                                val result =
+                                    api.getServerJegyKep(
+                                        purchase.id,
+                                        bizAzon,
+                                        context,
+                                        expired = expired
+                                    )
+                                val bytes = result.imageBytes
+                                if (bytes == null) {
+                                    snackbar.show(
+                                        "Letöltés sikertelen: ${result.error ?: "nincs kép"}",
+                                        isError = true
+                                    )
+                                    return@launch
+                                }
+                                val name = "mavjegy_${purchase.id}.png"
+                                shareServerJegyKep(context, bytes, name)
+                                snackbar.show(
+                                    "A jegy megosztásra kész",
+                                    isError = false
+                                )
+                            } catch (e: Exception) {
+                                snackbar.show(
+                                    "Hiba: ${e.message ?: e}",
+                                    isError = true
+                                )
                             }
                         }
-                    )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = shareAction,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(cardColor, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Share,
+                                contentDescription = "Jegy megosztása",
+                                tint = shareTint
+                            )
+                        }
+                        PurchaseCard(
+                            purchase = purchase,
+                            onClick = { onOpenDetail(purchase) },
+                            onLongClick = shareAction,
+                            modifier = Modifier.weight(1f),
+                            containerColor = cardColor
+                        )
+                    }
                 }
             }
         }
@@ -375,25 +405,21 @@ fun TicketsScreen(api: MavApi, onOpenDetail: (Purchase) -> Unit = {}) {
 private fun PurchaseCard(
     purchase: Purchase,
     onClick: () -> Unit,
-    onLongClick: () -> Unit = {}
+    onLongClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+    containerColor: Color
 ) {
     val isValid = purchase.status.trim().equals("Ervenyes", ignoreCase = true)
     val isPass = purchase.isPassTicket()
     Card(
         shape = if (isValid) RoundedCornerShape(28.dp) else RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                !isValid -> MaterialTheme.colorScheme.surfaceContainerHighest
-                isPass -> MaterialTheme.colorScheme.primaryContainer      // bérlet: primary
-                else -> MaterialTheme.colorScheme.tertiaryContainer       // jegy: tertiary
-            }
-        ),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
         border = if (!isValid) androidx.compose.foundation.BorderStroke(
             1.dp,
             MaterialTheme.colorScheme.outline
         ) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
@@ -402,13 +428,6 @@ private fun PurchaseCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            IconButton(onClick = onLongClick) {
-                Icon(
-                    imageVector = Icons.Rounded.Share,
-                    contentDescription = "Jegy megosztása",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -420,9 +439,9 @@ private fun PurchaseCard(
             ) {
                 Icon(
                     imageVector = if (isPass)
-                        Icons.Rounded.CalendarMonth
+                        Icons.Rounded.CardMembership
                     else
-                        Icons.Rounded.Train,
+                        Icons.Rounded.ConfirmationNumber,
                     contentDescription = null,
                     tint = if (isPass) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary,
                     modifier = Modifier.size(26.dp)
