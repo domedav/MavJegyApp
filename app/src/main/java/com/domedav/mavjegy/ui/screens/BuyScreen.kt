@@ -1,5 +1,7 @@
 package com.domedav.mavjegy.ui.screens
 
+import com.domedav.mavjegy.R
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.ConnectivityManager
@@ -40,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -70,7 +73,7 @@ fun BuyScreen(webViewState: MutableState<WebView?>) {
     LaunchedEffect(Unit) {
         if (!SettingsStore.getWebviewLoginHintSeen(context)) {
             snackbar.show(
-                "Jelentkezz be az oldal tetején!",
+                context.getString(R.string.buy_login_hint),
                 isError = false
             )
             SettingsStore.setWebviewLoginHintSeen(context, true)
@@ -119,13 +122,13 @@ fun BuyScreen(webViewState: MutableState<WebView?>) {
             )
             Spacer(modifier = Modifier.size(16.dp))
             Text(
-                text = "Nincs internetkapcsolat",
+                text = stringResource(R.string.body_no_internet),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "A vásárláshoz internet szükséges",
+                text = stringResource(R.string.body_buy_needs_internet),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -137,7 +140,7 @@ fun BuyScreen(webViewState: MutableState<WebView?>) {
                     webViewState.value?.loadUrl(BUY_URL)
                 }
             }) {
-                Text("Újrapróbálás")
+                Text(stringResource(R.string.btn_retry))
             }
         }
         return

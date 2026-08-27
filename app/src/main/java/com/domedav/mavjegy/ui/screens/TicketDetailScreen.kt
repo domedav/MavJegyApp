@@ -2,6 +2,8 @@
 
 package com.domedav.mavjegy.ui.screens
 
+import com.domedav.mavjegy.R
+
 import android.app.Activity
 import android.graphics.BitmapFactory
 import android.view.WindowManager
@@ -77,6 +79,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -207,7 +210,7 @@ fun TicketDetailScreen(
     // Hibák snackbarban
     LaunchedEffect(Unit) {
         if (!SettingsStore.getHasSwipedBack(context)) {
-            snackbar.show("Húzza felfelé az alsó sávot a visszalépéshez", isError = false)
+            snackbar.show(context.getString(R.string.hint_swipe_back), isError = false)
         }
     }
 
@@ -356,7 +359,7 @@ fun TicketDetailScreen(
                             // szóljunk (ne váltsunk Aztec-re)
                             serverFetchStarted = false
                             if (showServerImage) {
-                                snackbar.show(friendlyError(result?.error) ?: "Jegykép nem elérhető", isError = true)
+                                snackbar.show(context.getString(friendlyError(result?.error)), isError = true)
                             }
                         }
                     }
@@ -442,13 +445,13 @@ fun TicketDetailScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Text(
-                                    text = errorMessage ?: "Ismeretlen hiba",
+                                    text = errorMessage ?: stringResource(R.string.err_unknown),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center
                                 )
                                 Button(onClick = { fetchTrigger++ }) {
-                                    Text("Újrapróbálás")
+                                    Text(stringResource(R.string.btn_retry))
                                 }
                             }
                         }
@@ -459,7 +462,7 @@ fun TicketDetailScreen(
                                 color = MaterialTheme.colorScheme.errorContainer
                             ) {
                                 Text(
-                                    text = "Lejárt",
+                                    text = stringResource(R.string.detail_expired),
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
@@ -479,7 +482,7 @@ fun TicketDetailScreen(
                                 ) {
                                     Image(
                                         bitmap = simg,
-                                        contentDescription = "Szerver jegykép",
+                                        contentDescription = stringResource(R.string.cd_server_img),
                                         contentScale = ContentScale.FillWidth,
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -497,7 +500,7 @@ fun TicketDetailScreen(
 
                             else -> {
                                 Text(
-                                    text = "Jegykép nem elérhető",
+                                    text = stringResource(R.string.detail_img_unavailable),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -573,7 +576,7 @@ fun TicketDetailScreen(
                     IconButton(onClick = { fetchTrigger++ }) {
                         Icon(
                             Icons.Default.Refresh,
-                            contentDescription = "Újrapróbálás",
+                            contentDescription = stringResource(R.string.btn_retry),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -668,7 +671,7 @@ private fun OwnerAndValidityPanel(
                         if (bmp != null) {
                             Image(
                                 bitmap = bmp,
-                                contentDescription = "Utas fényképe",
+                                contentDescription = stringResource(R.string.owner_photo),
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -697,7 +700,7 @@ private fun OwnerAndValidityPanel(
                         }
                         o.birthDate?.takeIf { it.isNotBlank() }?.let { bd ->
                             Text(
-                                text = "szül.: ${formatBirthDate(bd)}",
+                                text = stringResource(R.string.fmt_birth, formatBirthDate(bd)),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -730,7 +733,7 @@ private fun OwnerAndValidityPanel(
                     IconButton(onClick = onEditClick) {
                         Icon(
                             Icons.Rounded.Edit,
-                            contentDescription = "Tulajdonosi adatok szerkesztése",
+                            contentDescription = stringResource(R.string.title_edit_owner),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -760,7 +763,7 @@ private fun OwnerAndValidityPanel(
             ) {
                 IconValueRow(
                     icon = Icons.Rounded.Schedule,
-                    value = "${formatDate(purchase.validFrom)} – ${formatDate(purchase.validTo)}",
+                    value = stringResource(R.string.fmt_date_range, formatDate(purchase.validFrom, stringResource(R.string.dash_fallback)), formatDate(purchase.validTo, stringResource(R.string.dash_fallback))),
                     iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
                     modifier = Modifier.weight(1f)
@@ -799,7 +802,7 @@ private fun DaysRemainingBadge(purchase: Purchase) {
                 modifier = Modifier.size(16.dp)
             )
             Text(
-                text = if (expiredNow) "Lejárt" else "$days nap",
+                text = if (expiredNow) stringResource(R.string.detail_expired) else stringResource(R.string.fmt_days, days),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 color = content
@@ -965,7 +968,7 @@ private fun OwnerDetailsDialog(
                     if (bmp != null) {
                         Image(
                             bitmap = bmp,
-                            contentDescription = "Utas fényképe nagyítva",
+                                contentDescription = stringResource(R.string.owner_photo_zoom),
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -991,18 +994,18 @@ private fun OwnerDetailsDialog(
 
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     owner.birthDate?.takeIf { it.isNotBlank() }?.let { bd ->
-                        OwnerDetailRow("Születési dátum", formatBirthDate(bd))
+                        OwnerDetailRow(stringResource(R.string.birth_date), formatBirthDate(bd))
                     }
                     owner.azonosito?.takeIf { it.isNotBlank() }?.let { azon ->
-                        OwnerDetailRow("Bérletigazolvány azonosító", azon)
+                        OwnerDetailRow(stringResource(R.string.row_pass_id), azon)
                     }
                     owner.passengerType?.takeIf { it.isNotBlank() }?.let { pt ->
-                        OwnerDetailRow("Utastípus", pt)
+                        OwnerDetailRow(stringResource(R.string.row_pax), pt)
                     }
                 }
 
                 TextButton(onClick = onDismiss) {
-                    Text("Bezárás")
+                    Text(stringResource(R.string.btn_close))
                 }
             }
         }
@@ -1078,10 +1081,10 @@ private fun EditPassOwnerDialog(
                             .format(DateTimeFormatter.ofPattern("yyyy.MM.dd."))
                     }
                     showDatePicker = false
-                }) { Text("OK") }
+                    }) { Text(stringResource(R.string.btn_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Mégse") }
+                TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         ) {
             androidx.compose.material3.DatePicker(state = initialState)
@@ -1090,7 +1093,7 @@ private fun EditPassOwnerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Tulajdonosi adatok szerkesztése") },
+        title = { Text(stringResource(R.string.title_edit_owner)) },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1127,21 +1130,21 @@ private fun EditPassOwnerDialog(
                     if (shownBmp != null) {
                         Image(
                             bitmap = shownBmp,
-                            contentDescription = "Fotó módosítása",
+                            contentDescription = stringResource(R.string.cd_photo_edit),
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
                     } else {
                         Icon(
                             Icons.Rounded.Person,
-                            contentDescription = "Fotó hozzáadása",
+                            contentDescription = stringResource(R.string.cd_photo_add),
                             tint = MaterialTheme.colorScheme.onTertiaryContainer,
                             modifier = Modifier.size(40.dp)
                         )
                     }
                 }
                 Text(
-                    text = "Fotó módosítása",
+                    text = stringResource(R.string.cd_photo_edit),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1149,7 +1152,7 @@ private fun EditPassOwnerDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Teljes név") },
+                    label = { Text(stringResource(R.string.label_fullname)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1159,8 +1162,8 @@ private fun EditPassOwnerDialog(
                         value = birthDate.ifBlank { "" },
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Születési dátum") },
-                        placeholder = { Text("Válassz dátumot") },
+                        label = { Text(stringResource(R.string.birth_date)) },
+                        placeholder = { Text(stringResource(R.string.hint_pick_date)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1173,7 +1176,7 @@ private fun EditPassOwnerDialog(
                 OutlinedTextField(
                     value = azonosito,
                     onValueChange = { azonosito = it },
-                    label = { Text("Azonosító") },
+                    label = { Text(stringResource(R.string.label_id)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1189,10 +1192,10 @@ private fun EditPassOwnerDialog(
                         photoHash = photoHash
                     )
                 )
-            }) { Text("Mentés") }
+            }) { Text(stringResource(R.string.btn_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Mégse") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
         }
     )
 }

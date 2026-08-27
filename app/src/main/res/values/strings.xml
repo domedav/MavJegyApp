@@ -1,3 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tömegközlekedés</string>
+
+    <!-- Képernyőcímek -->
+    <string name="title_tickets">Jegyeim</string>
+    <string name="title_buy">Jegyvásárlás</string>
+    <string name="account_create">Fiók létrehozása</string>
+    <string name="btn_register">Regisztráció</string>
+    <string name="title_edit_owner">Tulajdonosi adatok szerkesztése</string>
+    <string name="title_forgot_pw">Elfelejtett jelszó</string>
+    <string name="rotate_prompt">Fordítsd álló helyzetbe a telefont!</string>
+    <string name="title_email">Email</string>
+    <string name="title_password">Jelszó</string>
+    <string name="title_pass">Bérlet</string>
+
+    <!-- Gombok -->
+    <string name="btn_retry">Újrapróbálás</string>
+    <string name="btn_buy_ticket">Jegy vásárlása</string>
+    <string name="btn_continue">Tovább</string>
+    <string name="btn_forgot_pw">Elfelejtett jelszó?</string>
+    <string name="btn_login">Bejelentkezés</string>
+    <string name="btn_ok">Rendben</string>
+    <string name="btn_cancel">Mégse</string>
+    <string name="btn_send">Küldés</string>
+    <string name="btn_save">Mentés</string>
+    <string name="btn_close">Bezárás</string>
+    <string name="cd_back_to_login">Vissza a bejelentkezéshez</string>
+
+    <!-- Űrlapmezők és címkék -->
+    <string name="hint_swipe_back">Húzd felfelé az alsó sávot a visszalépéshez</string>
+    <string name="label_email">A MÁV fiókod email címe</string>
+    <string name="label_password">A MÁV fiókod jelszava</string>
+    <string name="label_email_addr">Email cím</string>
+    <string name="label_lastname">Vezetéknév</string>
+    <string name="label_firstname">Keresztnév</string>
+    <string name="label_password_repeat">Jelszó megerősítése</string>
+    <string name="label_fullname">Teljes név</string>
+    <string name="label_id">Azonosító</string>
+    <string name="birth_date">Születési dátum</string>
+    <string name="hint_pick_date">Válassz dátumot</string>
+
+    <!-- Tartalomleírások -->
+    <string name="body_no_tickets">Jelenleg nincs érvényes jegyed vagy bérleted.</string>
+    <string name="body_no_internet">Nincs internetkapcsolat.</string>
+    <string name="body_buy_needs_internet">A vásárláshoz internetkapcsolat szükséges.</string>
+    <string name="buy_login_hint">Jelentkezz be az oldal tetején!</string>
+    <string name="hint_img_download">Jegykép letöltése…</string>
+    <string name="info_share_ready">A jegy megosztásra kész.</string>
+    <string name="share_title">Jegy megosztása</string>
+    <string name="detail_img_unavailable">A jegykép nem érhető el.</string>
+    <string name="detail_expired">Lejárt</string>
+    <string name="owner_photo">Utas fényképe</string>
+    <string name="owner_photo_zoom">Utas fényképe nagyítva</string>
+    <string name="row_pass_id">Bérletigazolvány azonosítója</string>
+    <string name="row_pax">Utastípus</string>
+    <string name="forgot_body">Új jelszót küldünk erre a címre:</string>
+    <string name="info_register_ok">Sikeres regisztráció! A folytatáshoz kövesd az emailben kapott útmutatást.</string>
+    <string name="dash_fallback">-</string>
+
+    <!-- Hibaüzenetek -->
+    <string name="err_fill_all">Kérlek, töltsd ki az összes mezőt!</string>
+    <string name="err_pw_mismatch">A két jelszó nem egyezik.</string>
+    <string name="err_invalid_birth">Érvénytelen születési dátum. A formátum: yyyy.MM.dd.</string>
+    <string name="err_no_biz">A jegyhez nem tartozik bizonylat-azonosító.</string>
+    <string name="err_no_internet">Nincs internetkapcsolat.</string>
+    <string name="err_bad_credentials">Hibás felhasználónév vagy jelszó.</string>
+    <string name="err_server">A szerver nem érhető el. Próbáld meg később.</string>
+    <string name="err_ticket_expired">A jegy lejárt.</string>
+    <string name="err_generic_fallback">Hoppá, valami hiba történt. Próbáld meg újra!</string>
+    <string name="err_generic">Próbáld meg újra!</string>
+    <string name="err_unknown">Ismeretlen hiba történt.</string>
+
+    <!-- Hozzáférhetőségi leírások -->
+    <string name="cd_refresh">Frissítés</string>
+    <string name="cd_server_img">Szerver jegykép</string>
+    <string name="cd_photo_edit">Fotó módosítása</string>
+    <string name="cd_photo_add">Fotó hozzáadása</string>
+    <string name="cd_pw_hide">Jelszó elrejtése</string>
+    <string name="cd_pw_show">Jelszó megjelenítése</string>
+
+    <!-- Formázott szövegek -->
+    <string name="fmt_birth">szül.: %s</string>
+    <string name="fmt_date_range">%1$s – %2$s</string>
+    <string name="fmt_days">%1$d nap</string>
+    <string name="fmt_valid_days">%1$d napig érvényes</string>
+    <string name="fmt_forgot_sent">Új jelszót küldtünk a(z) %s címre</string>
+    <string name="fmt_download_fail">Letöltés sikertelen: %s</string>
+    <string name="price_ft">%.0f Ft</string>
+    <string name="price_curr">%.0f %s</string>
 </resources>

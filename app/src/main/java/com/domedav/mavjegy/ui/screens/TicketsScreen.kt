@@ -1,5 +1,7 @@
 package com.domedav.mavjegy.ui.screens
 
+import com.domedav.mavjegy.R
+
 import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.core.animateFloatAsState
@@ -55,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.domedav.mavjegy.data.MavApi
@@ -92,7 +95,7 @@ private fun ValiditySubtitle(purchase: Purchase, isPass: Boolean) {
                     modifier = Modifier.size(14.dp)
                 )
                 Text(
-                    "$days napig érvényes",
+                    stringResource(R.string.fmt_valid_days, days),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1
                 )
@@ -106,7 +109,7 @@ private fun ValiditySubtitle(purchase: Purchase, isPass: Boolean) {
                     modifier = Modifier.size(14.dp)
                 )
                 Text(
-                    formatDate(vf),
+                    formatDate(vf, stringResource(R.string.dash_fallback)),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1
                 )
@@ -136,8 +139,8 @@ private val isoFormats = listOf(
     "yyyy-MM-dd"
 )
 
-internal fun formatDate(iso: String?): String {
-    if (iso.isNullOrBlank()) return "-"
+internal fun formatDate(iso: String?, fallback: String): String {
+    if (iso.isNullOrBlank()) return fallback
     return try {
         var parsed: Date? = null
         for (fmt in isoFormats) {
@@ -146,8 +149,8 @@ internal fun formatDate(iso: String?): String {
                 break
             } catch (_: Exception) {}
         }
-        parsed?.let { huDate.format(it) } ?: "-"
-    } catch (_: Exception) { "-" }
+        parsed?.let { huDate.format(it) } ?: fallback
+    } catch (_: Exception) { fallback }
 }
 
 private const val CACHE_FILE = "purchases_cache.json"
@@ -274,7 +277,7 @@ fun TicketsScreen(
     val snackbar = com.domedav.mavjegy.ui.components.LocalSnackbar.current
     LaunchedEffect(error) {
         error?.let {
-            snackbar.show(friendlyError(it), isError = true)
+            snackbar.show(context.getString(friendlyError(it)), isError = true)
             error = null
         }
     }
@@ -289,7 +292,7 @@ fun TicketsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Jegyek",
+                    text = stringResource(R.string.title_tickets),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
@@ -297,7 +300,7 @@ fun TicketsScreen(
                 IconButton(onClick = { refresh() }, enabled = !loading) {
                     Icon(
                         Icons.Rounded.Refresh,
-                        contentDescription = "Frissítés",
+                        contentDescription = stringResource(R.string.cd_refresh),
                         modifier = Modifier.rotate(rotation)
                     )
                 }
@@ -320,11 +323,11 @@ fun TicketsScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Nincs érvényes jegyed vagy bérleted",
+                            text = stringResource(R.string.body_no_tickets),
                             style = MaterialTheme.typography.titleMedium
                         )
                         Button(onClick = onNavigateToBuy) {
-                            Text("Jegy vásárlása")
+                            Text(stringResource(R.string.btn_buy_ticket))
                         }
                     }
                 }
@@ -357,13 +360,13 @@ fun TicketsScreen(
                     val shareAction: () -> Unit = {
                         scope.launch {
                             try {
-                                snackbar.show("Jegykép letöltése…", isError = false)
+                                snackbar.show(context.getString(R.string.hint_img_download), isError = false)
                                 val details = api.getTicketDetails(purchase.id)
                                 val bizAzon =
                                     details.ticketData?.bizonylatTechnikaiAzonosito
                                 if (bizAzon.isNullOrBlank()) {
                                     snackbar.show(
-                                        "Nincs bizonylat-azonosító a jegyhez",
+                                        context.getString(R.string.err_no_biz),
                                         isError = true
                                     )
                                     return@launch
@@ -381,7 +384,7 @@ fun TicketsScreen(
                                 val bytes = result.imageBytes
                                 if (bytes == null) {
                                     snackbar.show(
-                                        "Letöltés sikertelen: ${friendlyError(result?.error)}",
+                                        context.getString(R.string.fmt_download_fail, context.getString(friendlyError(result?.error))),
                                         isError = true
                                     )
                                     return@launch
@@ -389,12 +392,12 @@ fun TicketsScreen(
                                 val name = "mavjegy_${purchase.id}.png"
                                 shareServerJegyKep(context, bytes, name)
                                 snackbar.show(
-                                    "A jegy megosztásra kész",
+                                    context.getString(R.string.info_share_ready),
                                     isError = false
                                 )
                             } catch (e: Exception) {
                                 snackbar.show(
-                                    friendlyError(e.message ?: e.toString()),
+                                    context.getString(friendlyError(e.message ?: e.toString())),
                                     isError = true
                                 )
                             }
@@ -409,7 +412,7 @@ fun TicketsScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Share,
-                                contentDescription = "Jegy megosztása",
+                                contentDescription = stringResource(R.string.share_title),
                                 tint = shareTint
                             )
                         }
@@ -478,7 +481,7 @@ private fun PurchaseCard(
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 // Pontos név – jegynél ha az API nem ad nevet, semmit nem írunk ki
-                val titleText = if (isPass) "Bérlet" else purchase.name
+                val titleText = if (isPass) stringResource(R.string.title_pass) else purchase.name
                 if (!titleText.isNullOrBlank()) {
                     Text(
                         text = titleText,
@@ -495,9 +498,9 @@ private fun PurchaseCard(
             ) {
                 Text(
                     text = if (purchase.currency == "HUF")
-                        "%.0f Ft".format(purchase.amount)
+                        stringResource(R.string.price_ft, purchase.amount)
                     else
-                        "%.0f %s".format(purchase.amount, purchase.currency),
+                        stringResource(R.string.price_curr, purchase.amount, purchase.currency),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = if (isPass) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary,
@@ -522,5 +525,5 @@ private suspend fun shareServerJegyKep(context: android.content.Context, bytes: 
         putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(Intent.createChooser(intent, "Jegy megosztása"))
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_title)))
 }

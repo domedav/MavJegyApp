@@ -1,5 +1,7 @@
 package com.domedav.mavjegy
 
+import com.domedav.mavjegy.R
+
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.shadow
@@ -138,7 +141,7 @@ fun RotatePrompt() {
             )
             Spacer(modifier = Modifier.size(16.dp))
             Text(
-                "Fordítsd álló helyzetbe a készüléket!",
+                stringResource(R.string.rotate_prompt),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -327,8 +330,8 @@ fun AppRoot(api: MavApi) {
                     }
                 ) {
                     listOf(
-                        Icons.Rounded.ConfirmationNumber to "Jegyek",
-                        Icons.Rounded.ShoppingCart to "Vásárlás"
+                        Icons.Rounded.ConfirmationNumber to stringResource(R.string.title_tickets),
+                        Icons.Rounded.ShoppingCart to stringResource(R.string.title_buy)
                     ).forEachIndexed { index, (icon, label) ->
                         val selected = selectedTab == index
                         Box(

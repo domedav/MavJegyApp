@@ -2,6 +2,8 @@
 
 package com.domedav.mavjegy.ui.screens
 
+import com.domedav.mavjegy.R
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -64,7 +66,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -96,11 +100,12 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
     var showForgotDialog by remember { mutableStateOf(false) }
     var forgotEmail by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<Int?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
     var appeared by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) { appeared = true }
 
@@ -147,11 +152,11 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
         if (regLastName.isBlank() || regFirstName.isBlank() || regEmail.isBlank() ||
             regBirthDate.isBlank() || regPassword.isBlank() || regPasswordAgain.isBlank()
         ) {
-            error = "Kérlek tölts ki minden mezőt"
+            error = R.string.err_fill_all
             return@submitRegistration
         }
         if (regPassword != regPasswordAgain) {
-            error = "A két jelszó nem egyezik"
+            error = R.string.err_pw_mismatch
             return@submitRegistration
         }
         // yyyy.MM.dd. -> yyyy-MM-dd
@@ -162,7 +167,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
             ""
         }
         if (birthIso.isBlank()) {
-            error = "Érvénytelen születési dátum (yyyy.MM.dd.)"
+            error = R.string.err_invalid_birth
             return@submitRegistration
         }
         focusManager.clearFocus()
@@ -173,7 +178,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                 val result = api.register(regEmail.trim(), regLastName.trim(), regFirstName.trim(), birthIso, regPassword)
                 result.fold(
                     onSuccess = { _ ->
-                        info = "Regisztráció sikeres! A megerősítéshez kövesd az emailben kapott információkat."
+                        info = context.getString(R.string.info_register_ok)
                         step = 0
                     },
                     onFailure = { e -> error = friendlyError(e.message) }
@@ -194,7 +199,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                 result.fold(
                     onSuccess = { msg ->
                         showForgotDialog = false
-                        info = msg ?: "Új jelszó elküldve a(z) ${forgotEmail.trim()} címre"
+                        info = msg ?: context.getString(R.string.fmt_forgot_sent, forgotEmail.trim())
                     },
                     onFailure = { e -> error = friendlyError(e.message) }
                 )
@@ -275,7 +280,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                 }
                                  Spacer(modifier = Modifier.size(12.dp))
                                  Text(
-                                     text = "Email",
+                                      text = stringResource(R.string.title_email),
                                      style = MaterialTheme.typography.titleLarge,
                                      fontWeight = FontWeight.Bold,
                                      color = MaterialTheme.colorScheme.onSurface
@@ -284,7 +289,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                              Spacer(modifier = Modifier.height(6.dp))
                              StaggeredAppear(index = 1) {
                                  Text(
-                                     text = "A MÁV fiókod email címe",
+                                      text = stringResource(R.string.label_email),
                                      style = MaterialTheme.typography.bodyMedium,
                                      color = MaterialTheme.colorScheme.onSurfaceVariant
                                  )
@@ -317,7 +322,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                         .height(56.dp)
                                 ) {
                                     Text(
-                                        text = "Tovább",
+                                        text = stringResource(R.string.btn_continue),
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -331,13 +336,13 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     androidx.compose.material3.TextButton(onClick = { step = 2 }) {
-                                        Text("Fiók létrehozása")
+                                        Text(stringResource(R.string.account_create))
                                     }
                                     androidx.compose.material3.TextButton(onClick = {
                                         forgotEmail = email
                                         showForgotDialog = true
                                     }) {
-                                        Text("Elfelejtett jelszó?")
+                                        Text(stringResource(R.string.btn_forgot_pw))
                                     }
                                 }
                             }
@@ -371,14 +376,14 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                        contentDescription = "Vissza a bejelentkezéshez",
+                                        contentDescription = stringResource(R.string.cd_back_to_login),
                                         modifier = Modifier.padding(10.dp)
                                     )
                                 }
                                  Spacer(modifier = Modifier.size(12.dp))
                                  Text(
-                                     text = "Jelszó",
-                                     style = MaterialTheme.typography.titleLarge,
+                                      text = stringResource(R.string.title_password),
+                                      style = MaterialTheme.typography.titleLarge,
                                      fontWeight = FontWeight.Bold,
                                      color = MaterialTheme.colorScheme.onSurface
                                  )
@@ -386,7 +391,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                              Spacer(modifier = Modifier.height(6.dp))
                              StaggeredAppear(index = 1) {
                                  Text(
-                                     text = "A MÁV fiókod jelszava",
+                                      text = stringResource(R.string.label_password),
                                      style = MaterialTheme.typography.bodyMedium,
                                      color = MaterialTheme.colorScheme.onSurfaceVariant
                                  )
@@ -412,9 +417,9 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                                     Icons.Rounded.Visibility
                                                 },
                                                 contentDescription = if (passwordVisible) {
-                                                    "Jelszó elrejtése"
+                                                    stringResource(R.string.cd_pw_hide)
                                                 } else {
-                                                    "Jelszó megjelenítése"
+                                                    stringResource(R.string.cd_pw_show)
                                                 }
                                             )
                                         }
@@ -447,7 +452,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                         )
                                     } else {
                                         Text(
-                                            text = "Bejelentkezés",
+                                            text = stringResource(R.string.btn_login),
                                             style = MaterialTheme.typography.labelLarge,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -471,13 +476,13 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                        contentDescription = "Vissza a bejelentkezéshez",
+                                        contentDescription = stringResource(R.string.cd_back_to_login),
                                         modifier = Modifier.padding(10.dp)
                                     )
                                 }
                                 Spacer(modifier = Modifier.size(12.dp))
                                 Text(
-                                    text = "Fiók létrehozása",
+                                    text = stringResource(R.string.account_create),
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -488,7 +493,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                 OutlinedTextField(
                                     value = regLastName,
                                     onValueChange = { regLastName = it },
-                                    label = { Text("Vezetéknév") },
+                                    label = { Text(stringResource(R.string.label_lastname)) },
                                     singleLine = true,
                                     enabled = !loading,
                                     shape = FieldShape,
@@ -497,7 +502,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                 OutlinedTextField(
                                     value = regFirstName,
                                     onValueChange = { regFirstName = it },
-                                    label = { Text("Keresztnév") },
+                                    label = { Text(stringResource(R.string.label_firstname)) },
                                     singleLine = true,
                                     enabled = !loading,
                                     shape = FieldShape,
@@ -508,7 +513,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                             OutlinedTextField(
                                 value = regEmail,
                                 onValueChange = { regEmail = it },
-                                label = { Text("Email cím") },
+                                label = { Text(stringResource(R.string.label_email_addr)) },
                                 singleLine = true,
                                 enabled = !loading,
                                 keyboardOptions = KeyboardOptions(
@@ -533,11 +538,11 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                                     .format(java.time.format.DateTimeFormatter.ofPattern("yyyy.MM.dd."))
                                             }
                                             showRegDatePicker = false
-                                        }) { Text("OK") }
+                                            }) { Text(stringResource(R.string.btn_ok)) }
                                     },
                                     dismissButton = {
                                         androidx.compose.material3.TextButton(onClick = { showRegDatePicker = false }) {
-                                            Text("Mégse")
+                                            Text(stringResource(R.string.btn_cancel))
                                         }
                                     }
                                 ) {
@@ -549,8 +554,8 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     value = regBirthDate,
                                     onValueChange = {},
                                     readOnly = true,
-                                    label = { Text("Születési dátum") },
-                                    placeholder = { Text("Válassz dátumot") },
+                                    label = { Text(stringResource(R.string.birth_date)) },
+                                    placeholder = { Text(stringResource(R.string.hint_pick_date)) },
                                     singleLine = true,
                                     enabled = !loading,
                                     shape = FieldShape,
@@ -567,7 +572,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                             OutlinedTextField(
                                 value = regPassword,
                                 onValueChange = { regPassword = it },
-                                label = { Text("Jelszó") },
+                                label = { Text(stringResource(R.string.title_password)) },
                                 singleLine = true,
                                 enabled = !loading,
                                 visualTransformation = PasswordVisualTransformation(),
@@ -582,7 +587,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                             OutlinedTextField(
                                 value = regPasswordAgain,
                                 onValueChange = { regPasswordAgain = it },
-                                label = { Text("Jelszó újra") },
+                                label = { Text(stringResource(R.string.label_password_repeat)) },
                                 singleLine = true,
                                 enabled = !loading,
                                 visualTransformation = PasswordVisualTransformation(),
@@ -611,7 +616,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     )
                                 } else {
                                     Text(
-                                        text = "Regisztráció",
+                                        text = stringResource(R.string.btn_register),
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -634,7 +639,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                     // Hiba snackbar – error színű
                     LaunchedEffect(error) {
                         error?.let {
-                            snackbar.show(friendlyError(it), isError = true)
+                            snackbar.show(context.getString(it), isError = true)
                             error = null
                         }
                     }
@@ -655,18 +660,18 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
     if (showForgotDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showForgotDialog = false },
-            title = { Text("Elfelejtett jelszó") },
+            title = { Text(stringResource(R.string.title_forgot_pw)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "Új jelszót küldünk erre a címre:",
+                        stringResource(R.string.forgot_body),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedTextField(
                         value = forgotEmail,
                         onValueChange = { forgotEmail = it },
-                        label = { Text("Email cím") },
+                        label = { Text(stringResource(R.string.label_email_addr)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         modifier = Modifier.fillMaxWidth()
@@ -675,12 +680,12 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = { sendForgotPassword() }) {
-                    Text("Küldés")
+                    Text(stringResource(R.string.btn_send))
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showForgotDialog = false }) {
-                    Text("Mégse")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             }
         )
