@@ -266,7 +266,7 @@ fun TicketsScreen(
         }
     }
 
-    suspend fun fetchAndMerge(previousList: List<Purchase>): List<Purchase> {
+    suspend fun fetchAndMerge(previousList: List<Purchase>, force: Boolean = false): List<Purchase> {
         loading = true
         try {
             if (!isOnline(context) && includeExpired) {
@@ -288,8 +288,8 @@ fun TicketsScreen(
             error = null
             return merged
         } catch (e: Exception) {
-            // van cache -> csendes hiba, nincs cache -> hangos snackbar
-            if (previousList.isNotEmpty() || purchases.isNotEmpty()) error = null
+            // auto refresh csendben ha van cache, force (gomb) mindig hangos
+            if (!force && (previousList.isNotEmpty() || purchases.isNotEmpty())) error = null
             else error = e.message
             return previousList
         } finally {
@@ -310,7 +310,7 @@ fun TicketsScreen(
 
     fun refresh() {
         scope.launch {
-            fetchAndMerge(previousList = purchases)
+            fetchAndMerge(previousList = purchases, force = true)
         }
     }
 
