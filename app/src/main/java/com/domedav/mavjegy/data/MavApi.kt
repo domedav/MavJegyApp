@@ -589,7 +589,8 @@ class MavApi(private val tokenStore: TokenStore) {
             return@withContext ServerJegyképResult(null, cachedText, error = "Nincs bizonylat-azonosító")
         }
         if (tokenStore.isDemo()) {
-            return@withContext ServerJegyképResult(null, cachedText, error = "Demó módban nincs szerver jegykép")
+            val img = DemoData.demoTicketImage(purchaseId)
+            return@withContext ServerJegyképResult(img, "DEMO-BARCODE-12345", fromCache = img != null)
         }
         if (!ensureVimSession()) {
             return@withContext ServerJegyképResult(
