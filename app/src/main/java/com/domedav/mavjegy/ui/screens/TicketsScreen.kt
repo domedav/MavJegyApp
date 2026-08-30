@@ -475,19 +475,21 @@ fun TicketsScreen(
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = shareAction,
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(cardColor, CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Share,
-                                contentDescription = stringResource(R.string.share_title),
-                                tint = shareTint
-                            )
+                        if (!isExpired) {
+                            IconButton(
+                                onClick = shareAction,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(cardColor, CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Share,
+                                    contentDescription = stringResource(R.string.share_title),
+                                    tint = shareTint
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
                         PurchaseCard(
                             purchase = purchase,
                             onClick = { onOpenDetail(purchase) },
