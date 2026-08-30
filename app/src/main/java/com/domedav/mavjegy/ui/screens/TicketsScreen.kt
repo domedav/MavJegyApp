@@ -493,7 +493,7 @@ fun TicketsScreen(
                         PurchaseCard(
                             purchase = purchase,
                             onClick = { onOpenDetail(purchase) },
-                            onLongClick = shareAction,
+                            onLongClick = if (isExpired) {{}} else shareAction,
                             modifier = Modifier.weight(1f),
                             containerColor = cardColor,
                             enriching = nameMissing
@@ -580,7 +580,9 @@ private fun PurchaseCard(
                             text = titleText,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
+                            minLines = 1,
                             maxLines = 2,
+                            softWrap = true,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
