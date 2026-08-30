@@ -604,11 +604,15 @@ private suspend fun performShareTicket(
 ) {
     try {
         snackbar.show(context.getString(R.string.hint_img_download), isError = false)
-        val details = api.getTicketDetails(purchase.id)
-        val bizAzon = details.ticketData?.bizonylatTechnikaiAzonosito
+        val cachedDetails = withContext(Dispatchers.IO) { runCatching { TicketCache.load(context, purchase.id) }.getOrNull() }
+        val details = runCatching { api.getTicketDetails(purchase.id) }.getOrNull() ?: cachedDetails
+        val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito ?: cachedDetails?.ticketData?.bizonylatTechnikaiAzonosito
         if (bizAzon.isNullOrBlank()) {
             snackbar.show(context.getString(R.string.err_no_biz), isError = true)
             return
+        }
+        if (details != null && !(parseIso(purchase.validTo)?.isBefore(LocalDateTime.now()) ?: false)) {
+            withContext(Dispatchers.IO) { runCatching { TicketCache.save(context, purchase.id, details) } }
         }
         val expired = parseIso(purchase.validTo)?.isBefore(LocalDateTime.now()) ?: false
         val result = api.getServerJegyKep(purchase.id, bizAzon, context, expired = expired)
