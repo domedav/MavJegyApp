@@ -288,7 +288,9 @@ fun TicketsScreen(
             error = null
             return merged
         } catch (e: Exception) {
-            error = e.message
+            // van cache -> csendes hiba, nincs cache -> hangos snackbar
+            if (previousList.isNotEmpty() || purchases.isNotEmpty()) error = null
+            else error = e.message
             return previousList
         } finally {
             loading = false
