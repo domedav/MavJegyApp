@@ -30,7 +30,10 @@ object OfflineStore {
         target.parentFile?.let { if (!it.exists()) it.mkdirs() }
         val tmp = File(target.parent, target.name + ".tmp")
         tmp.writeText(content)
-        tmp.renameTo(target)
+        if (!tmp.renameTo(target)) {
+            tmp.copyTo(target, overwrite = true)
+            tmp.delete()
+        }
     }
 
     private fun write(file: File, content: String) {
@@ -170,12 +173,12 @@ object OfflineStore {
         return try {
             val compressed = compressImage(raw) ?: return null
             val hash = sha256(compressed)
-            val target = File(mavjegyCacheDir(context), "$hash.jpg")
-            if (!target.exists() || target.length() == 0L) {
-                target.parentFile?.let { if (!it.exists()) it.mkdirs() }
-                target.writeBytes(compressed)
-            }
             indexMutex.withLock {
+                val target = File(mavjegyCacheDir(context), "$hash.jpg")
+                if (!target.exists() || target.length() == 0L) {
+                    target.parentFile?.let { if (!it.exists()) it.mkdirs() }
+                    target.writeBytes(compressed)
+                }
                 val idx = mavjegyIndexFile(context)
                 val obj = try {
                     JSONObject(idx.takeIf { it.exists() }?.readText() ?: "{}")

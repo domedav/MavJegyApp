@@ -9,9 +9,8 @@ fun friendlyError(raw: String?): Int {
     val l = m.lowercase()
     return when {
         l.contains("blokkolva") || l.contains("waf") || l.contains("vim") ||
-        l.contains("getjegykep") || l.contains("http 4") || l.contains("http 5") ||
-        l.contains("http 40") || l.contains("http 50") || l.contains("500") ||
-        l.contains("503") -> R.string.err_server
+        l.contains("getjegykep") || l.contains("http 5") ||
+        l.contains("500") || l.contains("503") -> R.string.err_server
         l.contains("unknownhost") || l.contains("timeout") ||
         l.contains("socket") || l.contains("unable to resolve") ||
         l.contains("no route") || l.contains("connectexception") ||

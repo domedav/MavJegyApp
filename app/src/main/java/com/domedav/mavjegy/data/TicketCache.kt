@@ -78,7 +78,10 @@ object TicketCache {
         target.parentFile?.mkdirs()
         val tmp = java.io.File(target.parent, target.name + ".tmp")
         tmp.writeText(content)
-        tmp.renameTo(target)
+        if (!tmp.renameTo(target)) {
+            tmp.copyTo(target, overwrite = true)
+            tmp.delete()
+        }
     }
 
     suspend fun save(context: Context, purchaseId: String, details: TicketDetails) = mutex.withLock {

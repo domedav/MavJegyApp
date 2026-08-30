@@ -233,7 +233,11 @@ private fun writeCache(context: Context, purchases: List<Purchase>) = try {
     val target = java.io.File(context.filesDir, CACHE_FILE)
     val tmp = java.io.File(context.filesDir, CACHE_FILE + ".tmp")
     tmp.writeText(arr.toString())
-    tmp.renameTo(target)
+    if (!tmp.renameTo(target)) {
+        tmp.copyTo(target, overwrite = true)
+        tmp.delete()
+    }
+    Unit
 } catch (_: Exception) {}
 
 @Composable
@@ -297,9 +301,10 @@ fun TicketsScreen(
             error = null
             return merged
         } catch (e: Exception) {
-            // cache-first: ha van megjeleníthető adat, nem mutatunk hibát
-            if (previousList.isNotEmpty() || purchases.isNotEmpty()) error = null
-            else error = e.message
+            // cache-first: ha van megjeleníthető adat, auto csendes, kézi (force) hangos
+            if (previousList.isNotEmpty() || purchases.isNotEmpty()) {
+                error = if (force) e.message else null
+            } else error = e.message
             return previousList
         } finally {
             loading = false
@@ -614,6 +619,7 @@ private suspend fun performShareTicket(
         val cachedDetails = try { withContext(Dispatchers.IO) { TicketCache.load(context, purchase.id) } } catch (_: Exception) { null }
         val details = try { api.getTicketDetails(purchase.id) } catch (_: Exception) { null } ?: cachedDetails
         val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito
+            ?: cachedDetails?.ticketData?.bizonylatTechnikaiAzonosito
         if (bizAzon.isNullOrBlank()) {
             snackbar.show(context.getString(R.string.err_no_biz), isError = true)
             return
