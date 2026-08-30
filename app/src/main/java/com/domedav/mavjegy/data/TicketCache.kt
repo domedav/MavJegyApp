@@ -1,6 +1,8 @@
 package com.domedav.mavjegy.data
 
 import android.content.Context
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
@@ -24,6 +26,9 @@ data class CachedTicketDetails(
 object TicketCache {
     private val json = Json { ignoreUnknownKeys = true }
     private const val DIR = "ticket_cache"
+    private val mutex = Mutex()
+    private const val STALE_DAYS = 30L
+    private const val STALE_MILLIS = STALE_DAYS * 24 * 60 * 60 * 1000
 
     private val memoryNameCache = mutableStateMapOf<String, String>()
 
@@ -68,11 +73,18 @@ object TicketCache {
         java.io.File(java.io.File(context.filesDir, DIR),
             purchaseId.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".json")
 
-    fun save(context: Context, purchaseId: String, details: TicketDetails) {
+    /** Atomikus fájlírás: .tmp fájlba írás, majd rename. App kill közben a régi fájl sértetlen marad. */
+    private fun atomicWrite(target: java.io.File, content: String) {
+        target.parentFile?.mkdirs()
+        val tmp = java.io.File(target.parent, target.name + ".tmp")
+        tmp.writeText(content)
+        tmp.renameTo(target)
+    }
+
+    suspend fun save(context: Context, purchaseId: String, details: TicketDetails) = mutex.withLock {
         try {
             val f = file(context, purchaseId)
-            f.parentFile?.mkdirs()
-            f.writeText(json.encodeToString(
+            atomicWrite(f, json.encodeToString(
                 CachedTicketDetails.serializer(),
                 CachedTicketDetails(
                     serializedTicketData = details.ticketData?.serializedTicketData,
@@ -87,16 +99,17 @@ object TicketCache {
         } catch (_: Exception) {}
     }
 
-    fun load(context: Context, purchaseId: String): TicketDetails? {
-        return try {
+    suspend fun load(context: Context, purchaseId: String): TicketDetails? = mutex.withLock {
+        try {
             val f = file(context, purchaseId)
-            if (!f.exists()) return null
+            if (!f.exists()) return@withLock null
             val c = json.decodeFromString(CachedTicketDetails.serializer(), f.readText())
-            // Cache érvényessége a jegy lejáratáig: érvényesség vége után cache-hiba
+            // Cache lejárat: jegy lejárata VAGY 30 napnál régebbi cache
             val exp = expirationMillis(c.ervenyessegVege)
-            if (exp != null && System.currentTimeMillis() > exp) {
-                f.delete() // lejárt -> kuka a cache-ből
-                return null
+            val stale = c.fetchedAt > 0 && System.currentTimeMillis() - c.fetchedAt > STALE_MILLIS
+            if ((exp != null && System.currentTimeMillis() > exp) || stale) {
+                f.delete()
+                return@withLock null
             }
             TicketDetails(
                 ticketData = TicketData(c.serializedTicketData, c.jegySorszam, c.bizonylatTechnikaiAzonosito),
@@ -105,16 +118,32 @@ object TicketCache {
                 ervenyessegVege = c.ervenyessegVege
             )
         } catch (_: Exception) {
+            try { file(context, purchaseId).delete() } catch (_: Exception) {}
             null
         }
     }
 
     /** Csak a jegy neve, ha a jegy még nem járt le – lejárt jegyek cache-e automatikusan törlődik (párosításhoz szükséges adat) */
-    fun loadName(context: Context, purchaseId: String): String? =
-        load(context, purchaseId)?.ajanlatNev?.takeIf { it.isNotBlank() }
+    suspend fun loadName(context: Context, purchaseId: String): String? = mutex.withLock {
+        try {
+            val f = file(context, purchaseId)
+            if (!f.exists()) return@withLock null
+            val c = json.decodeFromString(CachedTicketDetails.serializer(), f.readText())
+            val exp = expirationMillis(c.ervenyessegVege)
+            val stale = c.fetchedAt > 0 && System.currentTimeMillis() - c.fetchedAt > STALE_MILLIS
+            if ((exp != null && System.currentTimeMillis() > exp) || stale) {
+                f.delete()
+                return@withLock null
+            }
+            c.ajanlatNev?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            try { file(context, purchaseId).delete() } catch (_: Exception) {}
+            null
+        }
+    }
 
     /** Lejárt / eltávolított jegyek cache-ének törlése – nem létezőként kezeljük */
-    fun delete(context: Context, purchaseId: String) {
+    suspend fun delete(context: Context, purchaseId: String) = mutex.withLock {
         try {
             file(context, purchaseId).delete()
         } catch (_: Exception) {}

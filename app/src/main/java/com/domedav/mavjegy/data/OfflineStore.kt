@@ -3,6 +3,8 @@ package com.domedav.mavjegy.data
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -18,15 +20,21 @@ import java.security.MessageDigest
 object OfflineStore {
 
     private const val MAX_PHOTO_BYTES = 2 * 1024 * 1024 // 2 MB
+    private val indexMutex = Mutex()
 
     private fun dir(context: Context, name: String): File =
         File(context.filesDir, name).apply { if (!exists()) mkdirs() }
 
+    /** Atomikus fájlírás: .tmp fájlba írás, majd rename. App kill közben a régi fájl sértetlen marad. */
+    private fun atomicWrite(target: File, content: String) {
+        target.parentFile?.let { if (!it.exists()) it.mkdirs() }
+        val tmp = File(target.parent, target.name + ".tmp")
+        tmp.writeText(content)
+        tmp.renameTo(target)
+    }
+
     private fun write(file: File, content: String) {
-        try {
-            file.parentFile?.let { if (!it.exists()) it.mkdirs() }
-            file.writeText(content)
-        } catch (_: Exception) {}
+        try { atomicWrite(file, content) } catch (_: Exception) {}
     }
 
     private fun read(file: File): String? = try {
@@ -158,7 +166,7 @@ object OfflineStore {
         return data
     }
 
-    fun saveServerJegyKep(context: Context, purchaseId: String, raw: ByteArray): String? {
+    suspend fun saveServerJegyKep(context: Context, purchaseId: String, raw: ByteArray): String? {
         return try {
             val compressed = compressImage(raw) ?: return null
             val hash = sha256(compressed)
@@ -167,25 +175,41 @@ object OfflineStore {
                 target.parentFile?.let { if (!it.exists()) it.mkdirs() }
                 target.writeBytes(compressed)
             }
-            // purchaseId -> hash index
-            val idx = mavjegyIndexFile(context)
-            val obj = try {
-                JSONObject(idx.takeIf { it.exists() }?.readText() ?: "{}")
-            } catch (_: Exception) { JSONObject() }
-            obj.put(purchaseId, hash)
-            idx.writeText(obj.toString())
+            indexMutex.withLock {
+                val idx = mavjegyIndexFile(context)
+                val obj = try {
+                    JSONObject(idx.takeIf { it.exists() }?.readText() ?: "{}")
+                } catch (_: Exception) { JSONObject() }
+                obj.put(purchaseId, hash)
+                atomicWrite(idx, obj.toString())
+                // elárvult képek takarítása: töröljük a könyvtárban lévő JPG-eket amikre az index nem hivatkozik
+                val referencedHashes = mutableSetOf<String>()
+                val keys = obj.keys()
+                while (keys.hasNext()) { referencedHashes.add(obj.getString(keys.next())) }
+                mavjegyCacheDir(context).listFiles()
+                    ?.filter { it.nameWithoutExtension !in referencedHashes && it.extension == "jpg" }
+                    ?.forEach { it.delete() }
+            }
             hash
         } catch (_: Exception) {
             null
         }
     }
 
-    fun loadServerJegyKep(context: Context, purchaseId: String): ByteArray? = try {
-        val idx = mavjegyIndexFile(context)
-        val obj = JSONObject(idx.takeIf { it.exists() }?.readText() ?: "{}")
-        val hash = obj.optString(purchaseId, "").takeIf { it.isNotBlank() } ?: return null
-        val f = File(mavjegyCacheDir(context), "$hash.jpg")
-        if (f.exists()) f.readBytes() else null
+    suspend fun loadServerJegyKep(context: Context, purchaseId: String): ByteArray? = try {
+        indexMutex.withLock {
+            val idx = mavjegyIndexFile(context)
+            val obj = try {
+                JSONObject(idx.takeIf { it.exists() }?.readText() ?: "{}")
+            } catch (_: Exception) { JSONObject() }
+            val hash = obj.optString(purchaseId, "").takeIf { it.isNotBlank() } ?: return@withLock null
+            val f = File(mavjegyCacheDir(context), "$hash.jpg")
+            if (f.exists()) f.readBytes() else {
+                obj.remove(purchaseId)
+                atomicWrite(idx, obj.toString())
+                null
+            }
+        }
     } catch (_: Exception) {
         null
     }
@@ -201,17 +225,19 @@ object OfflineStore {
     fun loadServerBarcode(context: Context, purchaseId: String): String? =
         read(mavjegyBarcodeFile(context, purchaseId))?.takeIf { it.isNotBlank() }
 
-    fun deleteServerJegyKep(context: Context, purchaseId: String) {
+    suspend fun deleteServerJegyKep(context: Context, purchaseId: String) {
         try {
-            val idx = mavjegyIndexFile(context)
-            if (idx.exists()) {
-                val obj = JSONObject(idx.readText())
-                val hash = obj.optString(purchaseId, "")
-                obj.remove(purchaseId)
-                idx.writeText(obj.toString())
-                if (hash.isNotBlank()) {
-                    val f = File(mavjegyCacheDir(context), "$hash.jpg")
-                    if (f.exists()) f.delete()
+            indexMutex.withLock {
+                val idx = mavjegyIndexFile(context)
+                if (idx.exists()) {
+                    val obj = try { JSONObject(idx.readText()) } catch (_: Exception) { JSONObject() }
+                    val hash = obj.optString(purchaseId, "")
+                    obj.remove(purchaseId)
+                    atomicWrite(idx, obj.toString())
+                    if (hash.isNotBlank()) {
+                        val f = File(mavjegyCacheDir(context), "$hash.jpg")
+                        if (f.exists()) f.delete()
+                    }
                 }
             }
         } catch (_: Exception) {}

@@ -211,9 +211,7 @@ fun TicketDetailScreen(
     LaunchedEffect(purchase.id, fetchTrigger) {
         loadingDetails = true
         errorMessage = null
-        val cached = withContext(Dispatchers.IO) {
-            runCatching { TicketCache.load(context, purchase.id) }.getOrNull()
-        }
+        val cached = try { withContext(Dispatchers.IO) { TicketCache.load(context, purchase.id) } } catch (_: Exception) { null }
         if (cached != null) {
             hasCached = true
             details = cached
@@ -222,9 +220,7 @@ fun TicketDetailScreen(
             val fetched = api.getTicketDetails(purchase.id)
             details = fetched
             if (!expired) {
-                withContext(Dispatchers.IO) {
-                    runCatching { TicketCache.save(context, purchase.id, fetched) }
-                }
+                withContext(Dispatchers.IO) { TicketCache.save(context, purchase.id, fetched) }
             }
             errorMessage = null
         } catch (e: Exception) {

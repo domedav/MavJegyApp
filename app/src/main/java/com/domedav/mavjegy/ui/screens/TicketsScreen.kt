@@ -230,7 +230,10 @@ private fun writeCache(context: Context, purchases: List<Purchase>) = try {
             }
         )
     }
-    context.openFileOutput(CACHE_FILE, Context.MODE_PRIVATE).use { it.write(arr.toString().toByteArray()) }
+    val target = java.io.File(context.filesDir, CACHE_FILE)
+    val tmp = java.io.File(context.filesDir, CACHE_FILE + ".tmp")
+    tmp.writeText(arr.toString())
+    tmp.renameTo(target)
 } catch (_: Exception) {}
 
 @Composable
@@ -262,7 +265,9 @@ fun TicketsScreen(
     suspend fun purgeRemoved(context: Context, oldList: List<Purchase>, kept: List<Purchase>) {
         val keptIds = kept.map { it.id }.toSet()
         withContext(Dispatchers.IO) {
-            oldList.filter { it.id !in keptIds }.forEach { TicketCache.delete(context, it.id) }
+            for (p in oldList.filter { it.id !in keptIds }) {
+                TicketCache.delete(context, p.id)
+            }
         }
     }
 
@@ -275,9 +280,13 @@ fun TicketsScreen(
             }
             val fresh = keepAlive(withContext(Dispatchers.IO) { api.getPurchases() }, includeExpired)
             purgeRemoved(context, previousList, fresh)
-            val merged = fresh.map { p ->
-                if (p.name.isRealName()) p
-                else TicketCache.loadName(context, p.id)?.let { p.copy(name = it) } ?: p
+            val merged = mutableListOf<Purchase>()
+            for (p in fresh) {
+                if (p.name.isRealName()) merged.add(p)
+                else {
+                    val n = try { TicketCache.loadName(context, p.id) } catch (_: Exception) { null }
+                    merged.add(n?.let { p.copy(name = it) } ?: p)
+                }
             }
             purchases = merged
             withContext(Dispatchers.IO) {
@@ -423,9 +432,7 @@ fun TicketsScreen(
                             if (mem.isRealName()) return@LaunchedEffect
                             if (isExpired && !isOnline(context)) return@LaunchedEffect
                             if (!isExpired) {
-                                val cached = withContext(Dispatchers.IO) {
-                                    runCatching { TicketCache.loadName(context, purchase.id) }.getOrNull()
-                                }
+                                val cached = try { withContext(Dispatchers.IO) { TicketCache.loadName(context, purchase.id) } } catch (_: Exception) { null }
                                 if (cached.isRealName()) {
                                     TicketCache.putNameMem(purchase.id, cached)
                                     return@LaunchedEffect
@@ -434,7 +441,7 @@ fun TicketsScreen(
                             val n = runCatching {
                                 withContext(Dispatchers.IO) {
                                     val d = api.getTicketDetails(purchase.id)
-                                    if (!isExpired) TicketCache.save(context, purchase.id, d)
+                                    if (!isExpired) withContext(Dispatchers.IO) { TicketCache.save(context, purchase.id, d) }
                                     d.ajanlatNev
                                 }
                             }.getOrNull()
@@ -604,7 +611,7 @@ private suspend fun performShareTicket(
 ) {
     try {
         snackbar.show(context.getString(R.string.hint_img_download), isError = false)
-        val cachedDetails = withContext(Dispatchers.IO) { runCatching { TicketCache.load(context, purchase.id) }.getOrNull() }
+        val cachedDetails = try { withContext(Dispatchers.IO) { TicketCache.load(context, purchase.id) } } catch (_: Exception) { null }
         val details = try { api.getTicketDetails(purchase.id) } catch (_: Exception) { null } ?: cachedDetails
         val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito
         if (bizAzon.isNullOrBlank()) {
@@ -612,7 +619,7 @@ private suspend fun performShareTicket(
             return
         }
         if (details != null && !(parseIso(purchase.validTo)?.isBefore(LocalDateTime.now()) ?: false)) {
-            withContext(Dispatchers.IO) { runCatching { TicketCache.save(context, purchase.id, details) } }
+            withContext(Dispatchers.IO) { TicketCache.save(context, purchase.id, details) }
         }
         val expired = parseIso(purchase.validTo)?.isBefore(LocalDateTime.now()) ?: false
         val result = api.getServerJegyKep(purchase.id, bizAzon, context, expired = expired)
