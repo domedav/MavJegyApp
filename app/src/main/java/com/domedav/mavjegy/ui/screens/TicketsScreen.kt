@@ -269,7 +269,7 @@ fun TicketsScreen(
     suspend fun fetchAndMerge(previousList: List<Purchase>, force: Boolean = false): List<Purchase> {
         loading = true
         try {
-            if (!isOnline(context) && includeExpired) {
+            if (!isOnline(context) && includeExpired && previousList.isEmpty() && purchases.isEmpty()) {
                 error = context.getString(R.string.err_no_internet)
                 return previousList
             }
@@ -288,8 +288,8 @@ fun TicketsScreen(
             error = null
             return merged
         } catch (e: Exception) {
-            // auto refresh csendben ha van cache, force (gomb) mindig hangos
-            if (!force && (previousList.isNotEmpty() || purchases.isNotEmpty())) error = null
+            // cache-first: ha van megjeleníthető adat, nem mutatunk hibát
+            if (previousList.isNotEmpty() || purchases.isNotEmpty()) error = null
             else error = e.message
             return previousList
         } finally {
@@ -605,8 +605,8 @@ private suspend fun performShareTicket(
     try {
         snackbar.show(context.getString(R.string.hint_img_download), isError = false)
         val cachedDetails = withContext(Dispatchers.IO) { runCatching { TicketCache.load(context, purchase.id) }.getOrNull() }
-        val details = runCatching { api.getTicketDetails(purchase.id) }.getOrNull() ?: cachedDetails
-        val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito ?: cachedDetails?.ticketData?.bizonylatTechnikaiAzonosito
+        val details = try { api.getTicketDetails(purchase.id) } catch (_: Exception) { null } ?: cachedDetails
+        val bizAzon = details?.ticketData?.bizonylatTechnikaiAzonosito
         if (bizAzon.isNullOrBlank()) {
             snackbar.show(context.getString(R.string.err_no_biz), isError = true)
             return
