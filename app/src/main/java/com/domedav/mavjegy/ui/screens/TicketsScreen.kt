@@ -583,7 +583,8 @@ private fun PurchaseCard(
                             minLines = 1,
                             maxLines = 2,
                             softWrap = true,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                     }
