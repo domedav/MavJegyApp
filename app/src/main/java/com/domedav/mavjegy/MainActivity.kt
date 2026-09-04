@@ -12,6 +12,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ConfirmationNumber
+import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.input.pointer.pointerInput
@@ -72,6 +73,7 @@ import com.domedav.mavjegy.ui.components.SnackbarHost
 import com.domedav.mavjegy.ui.components.SnackbarState
 import com.domedav.mavjegy.ui.screens.BuyScreen
 import com.domedav.mavjegy.ui.screens.LoginScreen
+import com.domedav.mavjegy.ui.screens.MavinformScreen
 import com.domedav.mavjegy.ui.screens.TicketDetailScreen
 import com.domedav.mavjegy.ui.screens.TicketsScreen
 import com.domedav.mavjegy.ui.theme.MavJegyTheme
@@ -200,6 +202,7 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
             label = "rootSwitch"
         ) { tab ->
             when (tab) {
+                2 -> MavinformScreen(api = api)
                 1 -> BuyScreen(webView)
                 else -> TicketsScreen(
                     api = api,
@@ -230,20 +233,20 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
 
         LaunchedEffect(selectedTab) {
             dragOffset.animateTo(
-                if (selectedTab == 0) 0f else itemSizePx,
+                selectedTab * itemSizePx,
                 spring(dampingRatio = Spring.DampingRatioLowBouncy)
             )
         }
 
-        // A selection karika MINDIG primary; a KÉT IKON színe a lerp alatt
+        // A selection karika MINDIG primary; a HÁROM IKON színe a lerp alatt
         // folyamatosan cserélődik: amelyik ikon alatt épp a karika áll, az világosodik
-        val dragProgress = (dragOffset.value / itemSizePx).coerceIn(0f, 1f)
+        val dragProgress = (dragOffset.value / itemSizePx).coerceIn(0f, 2f)
         val circleColor = MaterialTheme.colorScheme.primary
         val pillColor = MaterialTheme.colorScheme.surfaceContainerHighest
-        // 0. ikon: onPrimary -> onSurfaceVariant, 1. ikon: onSurfaceVariant -> onPrimary
-        val tint0 = lerp(MaterialTheme.colorScheme.onPrimary, MaterialTheme.colorScheme.onSurfaceVariant, dragProgress)
-        val tint1 = lerp(MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.onPrimary, dragProgress)
-        val iconTints = listOf(tint0, tint1)
+        val iconTints = (0..2).map { i ->
+            val diff = kotlin.math.abs(dragProgress - i.toFloat()).coerceIn(0f, 1f)
+            lerp(MaterialTheme.colorScheme.onPrimary, MaterialTheme.colorScheme.onSurfaceVariant, diff)
+        }
 
         if (detailPurchase == null) Surface(
             modifier = Modifier
@@ -328,27 +331,31 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                         detectDragGestures(
                             onDragStart = { },
                             onDragEnd = {
-                                val targetOffset = if (dragOffset.value > itemSizePx / 2f) itemSizePx else 0f
-                                val newTab = if (targetOffset == itemSizePx) 1 else 0
+                                val tabCount = 3
+                                val nearestTab = (dragOffset.value / itemSizePx + 0.5f).roundToInt()
+                                    .coerceIn(0, tabCount - 1)
+                                val targetOffset = nearestTab * itemSizePx
                                 scope.launch {
                                     dragOffset.animateTo(
                                         targetOffset,
                                         spring(dampingRatio = Spring.DampingRatioLowBouncy)
                                     )
-                                    selectedTab = newTab
+                                    selectedTab = nearestTab
                                 }
                             }
                         ) { change, dragAmount ->
                             change.consume()
+                            val maxOffset = 2 * itemSizePx
                             val new = (dragOffset.value + dragAmount.y)
-                                .coerceIn(0f, itemSizePx)
+                                .coerceIn(0f, maxOffset)
                             scope.launch { dragOffset.snapTo(new) }
                         }
                     }
                 ) {
                     listOf(
                         Icons.Rounded.ConfirmationNumber to stringResource(R.string.title_tickets),
-                        Icons.Rounded.ShoppingCart to stringResource(R.string.title_buy)
+                        Icons.Rounded.ShoppingCart to stringResource(R.string.title_buy),
+                        Icons.Rounded.Newspaper to stringResource(R.string.title_news)
                     ).forEachIndexed { index, (icon, label) ->
                         val selected = selectedTab == index
                         Box(

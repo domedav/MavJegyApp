@@ -5,6 +5,7 @@
     <!-- Képernyőcímek -->
     <string name="title_tickets">Jegyeim</string>
     <string name="title_buy">Jegyvásárlás</string>
+    <string name="title_news">Hírek</string>
     <string name="account_create">Fiók létrehozása</string>
     <string name="btn_register">Regisztráció</string>
     <string name="title_edit_owner">Tulajdonosi adatok szerkesztése</string>
@@ -70,6 +71,7 @@
     <string name="err_generic_fallback">Hoppá, valami hiba történt. Próbáld meg újra!</string>
     <string name="err_generic">Próbáld meg újra!</string>
     <string name="err_unknown">Ismeretlen hiba történt.</string>
+    <string name="news_error">Nem sikerült betölteni a híreket.</string>
 
     <!-- Hozzáférhetőségi leírások -->
     <string name="cd_refresh">Frissítés</string>

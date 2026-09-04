@@ -738,6 +738,34 @@ class MavApi(private val tokenStore: TokenStore) {
         return "0-$huf${String(ca)}"
     }
 
+    suspend fun fetchMavinformList(page: Int = 0): List<MavinformItem> = withContext(Dispatchers.IO) {
+        val url = if (page == 0) "https://www.mavcsoport.hu/mavinform"
+                  else "https://www.mavcsoport.hu/mavinform?page=$page"
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .get()
+            .build()
+        val response = client.newCall(request).execute()
+        response.use {
+            if (!it.isSuccessful) error("HTTP ${it.code}")
+            MavinformScraper.parseList(it.body!!.string())
+        }
+    }
+
+    suspend fun fetchMavinformDetail(url: String): String = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .get()
+            .build()
+        val response = client.newCall(request).execute()
+        response.use {
+            if (!it.isSuccessful) error("HTTP ${it.code}")
+            MavinformScraper.parseDetail(it.body!!.string())
+        }
+    }
+
     private companion object {
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
