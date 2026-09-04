@@ -72,6 +72,8 @@
     <string name="err_generic">Próbáld meg újra!</string>
     <string name="err_unknown">Ismeretlen hiba történt.</string>
     <string name="news_error">Nem sikerült betölteni a híreket.</string>
+    <string name="news_search_hint">Keresés a hírekben…</string>
+    <string name="news_no_results">Nincsenek találatok.</string>
 
     <!-- Hozzáférhetőségi leírások -->
     <string name="cd_refresh">Frissítés</string>

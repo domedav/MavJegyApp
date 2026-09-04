@@ -20,8 +20,8 @@ android {
         applicationId = "com.domedav.mavjegy"
         minSdk = 26
         targetSdk = 36
-        versionCode = 102000
-        versionName = "1.2.0"
+        versionCode = 103000
+        versionName = "1.3.0"
     }
 
     signingConfigs {

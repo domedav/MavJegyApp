@@ -12,7 +12,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ConfirmationNumber
-import androidx.compose.material.icons.rounded.Newspaper
+import androidx.compose.material.icons.rounded.Feed
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.input.pointer.pointerInput
@@ -48,6 +48,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.onSizeChanged
 import kotlin.math.abs
 import com.domedav.mavjegy.data.SettingsStore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -229,9 +230,28 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
         // 1f = jobb oldal, 0f = bal oldal – ez vezérli a pill folyamatos vízszintes pozícióját
         val sideFraction = remember { Animatable(if (pillSide == 0) 1f else 0f) }
         val travelPx = (screenWidthPx - pillWidthPx - 2 * edgePaddingPx).coerceAtLeast(1f)
-        val currentX = edgePaddingPx + sideFraction.value * travelPx
+        // Auto-hide: 3 mp tétlenség után a pill 60%-a kiúszik a képernyő szélére,
+        // koppintásra visszajön. Bármely interakció (tab, oldal, tap, húzás) reseteli.
+        var peeked by remember { mutableStateOf(false) }
+        val peekAnim = remember { Animatable(0f) } // 0 = bent, 1 = 60% kint
+        LaunchedEffect(peeked, selectedTab, pillSide) {
+            if (!peeked) {
+                delay(3000)
+                peeked = true
+            }
+        }
+        LaunchedEffect(peeked) {
+            peekAnim.animateTo(
+                if (peeked) 1f else 0f,
+                spring(dampingRatio = Spring.DampingRatioLowBouncy)
+            )
+        }
+        val hidePx = pillWidthPx * 0.6f * peekAnim.value
+        val hideDir = if (sideFraction.value > 0.5f) 1f else -1f
+        val currentX = edgePaddingPx + sideFraction.value * travelPx + hideDir * hidePx
 
         LaunchedEffect(selectedTab) {
+            peeked = false
             dragOffset.animateTo(
                 selectedTab * itemSizePx,
                 spring(dampingRatio = Spring.DampingRatioLowBouncy)
@@ -289,7 +309,12 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                                 scope.launch { sideFraction.snapTo(newFraction) }
                             }
                         } while (event.changes.any { it.pressed } && !done)
+                        if (!decided) {
+                            // koppintás (nem húzás) -> pill visszahozása, eventet nem fogyasztjuk
+                            peeked = false
+                        }
                         if (decided && isHorizontal) {
+                            peeked = false
                             // Elengedéskor a legközelebbi oldalra tapad – sosem középen.
                             // Flick-barát: pici elhúzás az ellenkező irányba is oldalt vált.
                             val currentSideIsRight = pillSide == 0
@@ -332,7 +357,7 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                             onDragStart = { },
                             onDragEnd = {
                                 val tabCount = 3
-                                val nearestTab = (dragOffset.value / itemSizePx + 0.5f).roundToInt()
+                                val nearestTab = (dragOffset.value / itemSizePx).roundToInt()
                                     .coerceIn(0, tabCount - 1)
                                 val targetOffset = nearestTab * itemSizePx
                                 scope.launch {
@@ -355,7 +380,7 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                     listOf(
                         Icons.Rounded.ConfirmationNumber to stringResource(R.string.title_tickets),
                         Icons.Rounded.ShoppingCart to stringResource(R.string.title_buy),
-                        Icons.Rounded.Newspaper to stringResource(R.string.title_news)
+                        Icons.Rounded.Feed to stringResource(R.string.title_news)
                     ).forEachIndexed { index, (icon, label) ->
                         val selected = selectedTab == index
                         Box(

@@ -34,26 +34,48 @@ object MavinformScraper {
     }
 
     fun parseDetail(html: String): String {
-        val bodyMatch = Regex(
-            """class="field-body">(.*)""",
-            RegexOption.DOT_MATCHES_ALL
-        ).find(html) ?: return ""
+        // Minden field-body blokk kiegyensúlyozott kinyerése (a beágyazott
+        // div-ek miatt a sima (.*?)</div> regex széttörne), a leghosszabb nyer
+        val bodies = extractDivsByClass(html, "field-body")
+        if (bodies.isEmpty()) return ""
+        return bodies.maxOf { joinBlocks(it) }
+    }
 
-        val chunk = bodyMatch.groupValues[1].take(3000)
+    /** Kiegyensúlyozott <div class="...">...</div> kinyerés: az összes találat belső HTML-je */
+    private fun extractDivsByClass(html: String, cssClass: String): List<String> {
+        val out = mutableListOf<String>()
+        val openTag = Regex("""<div\b[^>]*class="$cssClass"[^>]*>""")
+        val anyDiv = Regex("""</?div\b[^>]*>""")
+        for (m in openTag.findAll(html)) {
+            var depth = 0
+            var innerStart = -1
+            for (t in anyDiv.findAll(html, m.range.first)) {
+                if (t.value.startsWith("</")) depth-- else {
+                    if (depth == 0 && t.range.first == m.range.first) innerStart = t.range.last + 1
+                    depth++
+                }
+                if (depth == 0 && innerStart >= 0) {
+                    out.add(html.substring(innerStart, t.range.first))
+                    break
+                }
+            }
+        }
+        return out
+    }
 
-        val yellowMatch = Regex(
-            """class="yellowbox">(.*?)</div>""",
-            RegexOption.DOT_MATCHES_ALL
-        ).find(chunk)
-        if (yellowMatch != null) return cleanHtml(yellowMatch.groupValues[1])
-
-        val pMatch = Regex(
-            """<p>(.*?)</p>""",
-            RegexOption.DOT_MATCHES_ALL
-        ).find(chunk)
-        if (pMatch != null) return cleanHtml(pMatch.groupValues[1])
-
-        return cleanHtml(chunk)
+    /** Blokk-elemek (p, li, h1-h6) sorrendben, üresek kihagyva, dupla újsorral joinolva */
+    private fun joinBlocks(innerHtml: String): String {
+        val block = Regex(
+            """<(p|li|h[1-6])\b[^>]*>(.*?)</\1>""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        )
+        val parts = block.findAll(innerHtml)
+            .map { cleanHtml(it.groupValues[2]) }
+            .filter { it.isNotBlank() }
+            .toList()
+        if (parts.isNotEmpty()) return parts.joinToString("\n\n")
+        // nincs <p>: nyers szöveg (pl. csak yellowbox/div-es tartalom)
+        return cleanHtml(innerHtml).take(2000)
     }
 
     private fun detectCategory(block: String): String {
@@ -74,6 +96,8 @@ object MavinformScraper {
             .replace("&ndash;", "–")
             .replace("&gt;", ">")
             .replace("&lt;", "<")
+            .replace("&quot;", "\"")
+            .replace("&#039;", "'")
             .replace(Regex("\\s+"), " ")
             .trim()
     }

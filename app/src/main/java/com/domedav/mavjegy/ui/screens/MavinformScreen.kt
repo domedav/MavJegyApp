@@ -27,19 +27,25 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Train
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -87,6 +93,9 @@ fun MavinformScreen(api: MavApi) {
     var pinnedLinks by remember { mutableStateOf(setOf<String>()) }
     var pinTick by remember { mutableIntStateOf(0) }
 
+    // Keresés
+    var query by remember { mutableStateOf("") }
+
     // Detail popup
     var selectedItem by remember { mutableStateOf<MavinformItem?>(null) }
     var detailDescription by remember { mutableStateOf("") }
@@ -116,28 +125,32 @@ fun MavinformScreen(api: MavApi) {
         pinnedLinks = NewsPinPrefs.getPinnedLinks(context)
     }
 
-    // Lista betöltése
+    // Lista betöltése — minden kilépési ág visszaállítja a flageket,
+    // különben a lapozó loader örökké pörögne újratöltés nélkül
     suspend fun loadPage(page: Int) {
-        if (loading) return
+        if (loading || loadingMore) return
         if (!isOnline(context)) {
             error = context.getString(R.string.err_no_internet)
             return
         }
-        loading = true
+        if (page == 0) loading = true else loadingMore = true
         try {
             val newItems = api.fetchMavinformList(page)
             if (page == 0) {
                 allItems = newItems
             } else {
-                allItems = allItems + newItems
+                // duplikátum-védelem link alapján
+                val known = allItems.map { it.link }.toSet()
+                allItems = allItems + newItems.filter { it.link !in known }
             }
             hasMore = newItems.isNotEmpty()
             currentPage = page
         } catch (e: Exception) {
             if (allItems.isEmpty()) error = e.message ?: e.javaClass.simpleName
+        } finally {
+            loading = false
+            loadingMore = false
         }
-        loading = false
-        loadingMore = false
     }
 
     fun refresh() {
@@ -145,22 +158,31 @@ fun MavinformScreen(api: MavApi) {
             allItems = emptyList()
             currentPage = 0
             hasMore = true
+            loadingMore = false
             loadPage(0)
         }
     }
 
-    // Lapozás: ha a lista végéhez érünk
+    // Lapozás: csak ha van betöltött item ÉS a user tényleg legörgetett a végére.
+    // Üres listánál és képernyőre kiférő listánál nem lő magától.
     val shouldLoadMore by remember {
         derivedStateOf {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val total = listState.layoutInfo.totalItemsCount
-            !loading && !loadingMore && hasMore && total > 0 && lastVisible >= total - 2
+            val userScrolled = listState.firstVisibleItemIndex > 0 ||
+                listState.firstVisibleItemScrollOffset > 0
+            !loading && !loadingMore && hasMore &&
+                allItems.isNotEmpty() && total > 0 &&
+                query.isBlank() &&
+                userScrolled && lastVisible >= total - 2
         }
     }
+    // A töltést scope-ban indítjuk, NE az effect korutinjában:
+    // különben a loadingMore=true flagváltás újraindítaná az effectet
+    // és cancelölné a még futó hálózati kérést (loader-villogás, megakadás)
     LaunchedEffect(shouldLoadMore) {
         if (shouldLoadMore) {
-            loadingMore = true
-            loadPage(currentPage + 1)
+            scope.launch { loadPage(currentPage + 1) }
         }
     }
 
@@ -171,6 +193,16 @@ fun MavinformScreen(api: MavApi) {
         val pinned = allItems.filter { it.link in pinnedLinks }
         val unpinned = allItems.filter { it.link !in pinnedLinks }
         pinned + unpinned
+    }
+
+    // Szűrés cím + kategória alapján (leírás csak kattintásra töltődik, arra nem szűrünk)
+    val filteredItems = remember(sortedItems, query) {
+        val q = query.trim()
+        if (q.isBlank()) sortedItems
+        else sortedItems.filter {
+            it.title.contains(q, ignoreCase = true) ||
+                categoryLabel(it.category).contains(q, ignoreCase = true)
+        }
     }
 
     // --- LISTA OLDAL ---
@@ -216,13 +248,44 @@ fun MavinformScreen(api: MavApi) {
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }
-            if (!loading && allItems.isEmpty() && error == null) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text(stringResource(R.string.news_search_hint)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.btn_cancel),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 4.dp)
+            )
+            if (!loading && filteredItems.isEmpty() && error == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = stringResource(R.string.body_no_tickets),
+                        text = stringResource(
+                            if (query.isBlank()) R.string.body_no_tickets
+                            else R.string.news_no_results
+                        ),
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
@@ -240,7 +303,7 @@ fun MavinformScreen(api: MavApi) {
                     ),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(sortedItems, key = { it.link }) { item ->
+                    items(filteredItems, key = { it.link }) { item ->
                         val isPinned = item.link in pinnedLinks
                         MavinformCard(
                             item = item,
@@ -317,12 +380,19 @@ fun MavinformScreen(api: MavApi) {
                             )
                         }
                     } else {
-                        Text(
-                            text = detailDescription,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(top = 16.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 400.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                text = detailDescription,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(top = 16.dp)
+                            )
+                        }
                     }
                 }
             }
