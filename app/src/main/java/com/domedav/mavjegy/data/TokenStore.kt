@@ -83,6 +83,17 @@ class TokenStore(private val context: Context) {
         prefs.edit().putLong(KEY_VIM_EXPIRY, expiryMillis).apply()
     }
 
+    /** Utolsó sikeres login időpontja, epoch millis; 0 = ismeretlen (régi telepítés) */
+    fun getLoginTime(): Long = prefs.getLong(KEY_LOGIN_TIME, 0L)
+
+    fun setLoginTime(millis: Long) {
+        prefs.edit().putLong(KEY_LOGIN_TIME, millis).apply()
+    }
+
+    /** 1 login 1 napig érvényes — utána auto relogin kell */
+    fun isLoginExpired(now: Long = System.currentTimeMillis()): Boolean =
+        now - getLoginTime() >= LOGIN_VALIDITY_MS
+
     fun hasToken(): Boolean = !getToken().isNullOrBlank()
 
     fun hasCredentials(): Boolean =
@@ -93,13 +104,17 @@ class TokenStore(private val context: Context) {
     }
 
     private companion object {
-        const val KEY_TOKEN = "userTokenXml"
-        const val KEY_EMAIL = "email"
-        const val KEY_PASSWORD = "password"
-        const val KEY_USER_ID = "felhasznaloAzonosito"
-        const val KEY_UAID = "uaid"
-        const val KEY_DEMO = "demoMode"
-        const val KEY_VIM_TOKEN = "vimToken"
-        const val KEY_VIM_EXPIRY = "vimTokenExpiry"
+        /** 1 login 1 napig érvényes — utána auto relogin */
+        const val LOGIN_VALIDITY_MS = 24 * 60 * 60 * 1000L
+
+        private const val KEY_TOKEN = "userTokenXml"
+        private const val KEY_LOGIN_TIME = "loginTime"
+        private const val KEY_EMAIL = "email"
+        private const val KEY_PASSWORD = "password"
+        private const val KEY_USER_ID = "felhasznaloAzonosito"
+        private const val KEY_UAID = "uaid"
+        private const val KEY_DEMO = "demoMode"
+        private const val KEY_VIM_TOKEN = "vimToken"
+        private const val KEY_VIM_EXPIRY = "vimTokenExpiry"
     }
 }

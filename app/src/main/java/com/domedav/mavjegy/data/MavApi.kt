@@ -94,6 +94,7 @@ class MavApi(private val tokenStore: TokenStore) {
         if (DemoData.matches(email, password)) {
             tokenStore.setDemo(true)
             tokenStore.setCredentials(DemoData.DEMO_EMAIL, DemoData.DEMO_PASSWORD)
+            tokenStore.setLoginTime(System.currentTimeMillis())
             return@withContext Result.success(Unit)
         }
         tokenStore.setDemo(false)
@@ -125,6 +126,7 @@ class MavApi(private val tokenStore: TokenStore) {
                 if (userId != null) tokenStore.setUserId(userId)
                 tokenStore.setToken(token)
                 tokenStore.setCredentials(email, password)
+                tokenStore.setLoginTime(System.currentTimeMillis())
             }
         }
     }
@@ -134,7 +136,11 @@ class MavApi(private val tokenStore: TokenStore) {
         if (!tokenStore.hasToken()) {
             return@withContext reloginIfPossible()
         }
-        runCatching {
+        // 1 login 1 napig érvényes — lejárt loginnal nem refreshelünk, hanem újra belépünk
+        if (tokenStore.isLoginExpired() && tokenStore.hasCredentials()) {
+            return@withContext reloginIfPossible()
+        }
+        val refreshed = runCatching {
             val body = "{}".toRequestBody(jsonBody)
             val request = Request.Builder()
                 .url(baseUrl + "ProfileApi/RefreshUserToken")
@@ -156,6 +162,11 @@ class MavApi(private val tokenStore: TokenStore) {
                 }
             }
         }.getOrElse { false }
+        // Refresh halott (pl. hetek óta lejárt token), de van mentett jelszó -> újra-login
+        if (!refreshed && tokenStore.hasCredentials()) {
+            return@withContext reloginIfPossible()
+        }
+        refreshed
     }
 
     suspend fun getPurchases(): List<Purchase> = withContext(Dispatchers.IO) {

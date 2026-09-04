@@ -88,6 +88,18 @@ private val CookieShape = RoundedCornerShape(16.dp)
 private val FieldShape = RoundedCornerShape(20.dp)
 private val PillShape = RoundedCornerShape(24.dp)
 
+private fun isPasswordStrong(pw: String): Boolean =
+    pw.length >= 8 && pw.any { it.isLowerCase() } &&
+        pw.any { it.isUpperCase() } && pw.any { it.isDigit() }
+
+private fun isBirthValid(raw: String): Boolean = try {
+    val p = raw.trim().split(".")
+    String.format("%04d-%02d-%02d", p[0].trim().toInt(), p[1].trim().toInt(), p[2].trim().toInt())
+    true
+} catch (_: Exception) {
+    false
+}
+
 @Composable
 fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
     var step by rememberSaveable { mutableIntStateOf(0) }
@@ -101,8 +113,8 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
     var regBirthDate by rememberSaveable { mutableStateOf("") }
     var regPassword by rememberSaveable { mutableStateOf("") }
     var regPasswordAgain by rememberSaveable { mutableStateOf("") }
-    var showForgotDialog by remember { mutableStateOf(false) }
-    var forgotEmail by remember { mutableStateOf("") }
+    var regPasswordVisible by rememberSaveable { mutableStateOf(false) }
+    var forgotEmail by rememberSaveable { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<Int?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
@@ -171,6 +183,10 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
             error = R.string.err_pw_mismatch
             return@submitRegistration
         }
+        if (!isPasswordStrong(regPassword)) {
+            error = R.string.err_weak_password
+            return@submitRegistration
+        }
         // yyyy.MM.dd. -> yyyy-MM-dd
         val birthIso = try {
             val p = regBirthDate.trim().split(".")
@@ -222,8 +238,8 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                 val result = withTimeout(15_000) { api.forgotPassword(forgotEmail.trim()) }
                 result.fold(
                     onSuccess = { msg ->
-                        showForgotDialog = false
                         info = msg ?: context.getString(R.string.fmt_forgot_sent, forgotEmail.trim())
+                        step = 0
                     },
                     onFailure = { e -> error = friendlyError(e.message) }
                 )
@@ -368,7 +384,8 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     }
                                     androidx.compose.material3.TextButton(onClick = {
                                         forgotEmail = email
-                                        showForgotDialog = true
+                                        error = null
+                                        step = 6
                                     }) {
                                         Text(stringResource(R.string.btn_forgot_pw))
                                     }
@@ -490,7 +507,7 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                         }
 
                         2 -> {
-                            // Regisztráció
+                            // Regisztráció 1/4: név
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
                                     shape = CookieShape,
@@ -516,42 +533,196 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                OutlinedTextField(
-                                    value = regLastName,
-                                    onValueChange = { regLastName = it },
-                                    label = { Text(stringResource(R.string.label_lastname)) },
-                                    singleLine = true,
-                                    enabled = !loading,
-                                    shape = FieldShape,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                OutlinedTextField(
-                                    value = regFirstName,
-                                    onValueChange = { regFirstName = it },
-                                    label = { Text(stringResource(R.string.label_firstname)) },
-                                    singleLine = true,
-                                    enabled = !loading,
-                                    shape = FieldShape,
-                                    modifier = Modifier.weight(1f)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            StaggeredAppear(index = 1) {
+                                Text(
+                                    text = stringResource(R.string.desc_reg_name),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = regEmail,
-                                onValueChange = { regEmail = it },
-                                label = { Text(stringResource(R.string.label_email_addr)) },
-                                singleLine = true,
-                                enabled = !loading,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Email,
-                                    imeAction = ImeAction.Next
-                                ),
-                                shape = FieldShape,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(20.dp))
+                            StaggeredAppear(index = 2) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    OutlinedTextField(
+                                        value = regLastName,
+                                        onValueChange = { regLastName = it },
+                                        label = { Text(stringResource(R.string.label_lastname)) },
+                                        singleLine = true,
+                                        enabled = !loading,
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Text,
+                                            imeAction = ImeAction.Next
+                                        ),
+                                        shape = FieldShape,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    OutlinedTextField(
+                                        value = regFirstName,
+                                        onValueChange = { regFirstName = it },
+                                        label = { Text(stringResource(R.string.label_firstname)) },
+                                        singleLine = true,
+                                        enabled = !loading,
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Text,
+                                            imeAction = ImeAction.Done
+                                        ),
+                                        keyboardActions = KeyboardActions(onDone = {
+                                            if (regLastName.isNotBlank() && regFirstName.isNotBlank()) {
+                                                error = null
+                                                step = 3
+                                            } else error = R.string.err_fill_all
+                                        }),
+                                        shape = FieldShape,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            StaggeredAppear(index = 3) {
+                                Button(
+                                    onClick = {
+                                        if (regLastName.isNotBlank() && regFirstName.isNotBlank()) {
+                                            focusManager.clearFocus()
+                                            error = null
+                                            step = 3
+                                        } else error = R.string.err_fill_all
+                                    },
+                                    enabled = !loading && regLastName.isNotBlank() && regFirstName.isNotBlank(),
+                                    shape = FieldShape,
+                                    colors = ButtonDefaults.buttonColors(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(56.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.btn_continue),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        3 -> {
+                            // Regisztráció 2/4: email
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CookieShape,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.clickable(enabled = !loading) {
+                                        focusManager.clearFocus()
+                                        error = null
+                                        step = 2
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = stringResource(R.string.cd_back_to_login),
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.size(12.dp))
+                                Text(
+                                    text = stringResource(R.string.account_create),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            StaggeredAppear(index = 1) {
+                                Text(
+                                    text = stringResource(R.string.desc_reg_email),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
+                            StaggeredAppear(index = 2) {
+                                OutlinedTextField(
+                                    value = regEmail,
+                                    onValueChange = { regEmail = it },
+                                    label = { Text(stringResource(R.string.label_email_addr)) },
+                                    singleLine = true,
+                                    enabled = !loading,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Email,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    keyboardActions = KeyboardActions(onDone = {
+                                        if (regEmail.isNotBlank()) {
+                                            error = null
+                                            step = 4
+                                        } else error = R.string.err_fill_all
+                                    }),
+                                    shape = FieldShape,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            StaggeredAppear(index = 3) {
+                                Button(
+                                    onClick = {
+                                        if (regEmail.isNotBlank()) {
+                                            focusManager.clearFocus()
+                                            error = null
+                                            step = 4
+                                        } else error = R.string.err_fill_all
+                                    },
+                                    enabled = !loading && regEmail.isNotBlank(),
+                                    shape = FieldShape,
+                                    colors = ButtonDefaults.buttonColors(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(56.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.btn_continue),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        4 -> {
+                            // Regisztráció 3/4: születési dátum
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CookieShape,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.clickable(enabled = !loading) {
+                                        focusManager.clearFocus()
+                                        error = null
+                                        step = 3
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = stringResource(R.string.cd_back_to_login),
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.size(12.dp))
+                                Text(
+                                    text = stringResource(R.string.account_create),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            StaggeredAppear(index = 1) {
+                                Text(
+                                    text = stringResource(R.string.desc_reg_birth),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
                             // Dátum: selector, nem input box
                             var showRegDatePicker by remember { mutableStateOf(false) }
                             if (showRegDatePicker) {
@@ -577,77 +748,266 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
                                     androidx.compose.material3.DatePicker(state = regDateState)
                                 }
                             }
-                            Box {
-                                OutlinedTextField(
-                                    value = regBirthDate,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text(stringResource(R.string.birth_date)) },
-                                    placeholder = { Text(stringResource(R.string.hint_pick_date)) },
-                                    singleLine = true,
-                                    enabled = !loading,
-                                    shape = FieldShape,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                // Átfedő kattintási réteg: ez nyitja a date pickert
-                                Box(
-                                    modifier = Modifier
-                                        .matchParentSize()
-                                        .clickable(enabled = !loading) { showRegDatePicker = true }
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = regPassword,
-                                onValueChange = { regPassword = it },
-                                label = { Text(stringResource(R.string.title_password)) },
-                                singleLine = true,
-                                enabled = !loading,
-                                visualTransformation = PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Password,
-                                    imeAction = ImeAction.Next
-                                ),
-                                shape = FieldShape,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = regPasswordAgain,
-                                onValueChange = { regPasswordAgain = it },
-                                label = { Text(stringResource(R.string.label_password_repeat)) },
-                                singleLine = true,
-                                enabled = !loading,
-                                visualTransformation = PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Password,
-                                    imeAction = ImeAction.Done
-                                ),
-                                keyboardActions = KeyboardActions(onDone = { submitRegistration() }),
-                                shape = FieldShape,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { submitRegistration() },
-                                enabled = !loading,
-                                shape = FieldShape,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp)
-                            ) {
-                                if (loading) {
-                                    ExpressiveLoader(
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        size = 20.dp,
-                                        strokeWidth = 2.5.dp
+                            StaggeredAppear(index = 2) {
+                                Box {
+                                    OutlinedTextField(
+                                        value = regBirthDate,
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        label = { Text(stringResource(R.string.birth_date)) },
+                                        placeholder = { Text(stringResource(R.string.hint_pick_date)) },
+                                        singleLine = true,
+                                        enabled = !loading,
+                                        shape = FieldShape,
+                                        modifier = Modifier.fillMaxWidth()
                                     )
-                                } else {
+                                    // Átfedő kattintási réteg: ez nyitja a date pickert
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .clickable(enabled = !loading) { showRegDatePicker = true }
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            StaggeredAppear(index = 3) {
+                                Button(
+                                    onClick = {
+                                        if (isBirthValid(regBirthDate)) {
+                                            focusManager.clearFocus()
+                                            error = null
+                                            step = 5
+                                        } else error = R.string.err_invalid_birth
+                                    },
+                                    enabled = !loading && isBirthValid(regBirthDate),
+                                    shape = FieldShape,
+                                    colors = ButtonDefaults.buttonColors(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(56.dp)
+                                ) {
                                     Text(
-                                        text = stringResource(R.string.btn_register),
+                                        text = stringResource(R.string.btn_continue),
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold
                                     )
+                                }
+                            }
+                        }
+
+                        5 -> {
+                            // Regisztráció 4/4: jelszó
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CookieShape,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.clickable(enabled = !loading) {
+                                        focusManager.clearFocus()
+                                        error = null
+                                        step = 4
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = stringResource(R.string.cd_back_to_login),
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.size(12.dp))
+                                Text(
+                                    text = stringResource(R.string.account_create),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            StaggeredAppear(index = 1) {
+                                Text(
+                                    text = stringResource(R.string.desc_reg_password),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
+                            StaggeredAppear(index = 2) {
+                                OutlinedTextField(
+                                    value = regPassword,
+                                    onValueChange = { regPassword = it },
+                                    label = { Text(stringResource(R.string.title_password)) },
+                                    singleLine = true,
+                                    enabled = !loading,
+                                    visualTransformation = if (regPasswordVisible) {
+                                        VisualTransformation.None
+                                    } else {
+                                        PasswordVisualTransformation()
+                                    },
+                                    trailingIcon = {
+                                        IconButton(onClick = { regPasswordVisible = !regPasswordVisible }) {
+                                            Icon(
+                                                imageVector = if (regPasswordVisible) {
+                                                    Icons.Rounded.VisibilityOff
+                                                } else {
+                                                    Icons.Rounded.Visibility
+                                                },
+                                                contentDescription = if (regPasswordVisible) {
+                                                    stringResource(R.string.cd_pw_hide)
+                                                } else {
+                                                    stringResource(R.string.cd_pw_show)
+                                                }
+                                            )
+                                        }
+                                    },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Password,
+                                        imeAction = ImeAction.Next
+                                    ),
+                                    shape = FieldShape,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            StaggeredAppear(index = 3) {
+                                OutlinedTextField(
+                                    value = regPasswordAgain,
+                                    onValueChange = { regPasswordAgain = it },
+                                    label = { Text(stringResource(R.string.label_password_repeat)) },
+                                    singleLine = true,
+                                    enabled = !loading,
+                                    visualTransformation = if (regPasswordVisible) {
+                                        VisualTransformation.None
+                                    } else {
+                                        PasswordVisualTransformation()
+                                    },
+                                    trailingIcon = {
+                                        IconButton(onClick = { regPasswordVisible = !regPasswordVisible }) {
+                                            Icon(
+                                                imageVector = if (regPasswordVisible) {
+                                                    Icons.Rounded.VisibilityOff
+                                                } else {
+                                                    Icons.Rounded.Visibility
+                                                },
+                                                contentDescription = if (regPasswordVisible) {
+                                                    stringResource(R.string.cd_pw_hide)
+                                                } else {
+                                                    stringResource(R.string.cd_pw_show)
+                                                }
+                                            )
+                                        }
+                                    },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Password,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    keyboardActions = KeyboardActions(onDone = { submitRegistration() }),
+                                    shape = FieldShape,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            StaggeredAppear(index = 4) {
+                                Button(
+                                    onClick = { submitRegistration() },
+                                    enabled = !loading && isPasswordStrong(regPassword) && regPassword == regPasswordAgain,
+                                    shape = FieldShape,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(56.dp)
+                                ) {
+                                    if (loading) {
+                                        ExpressiveLoader(
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            size = 20.dp,
+                                            strokeWidth = 2.5.dp
+                                        )
+                                    } else {
+                                        Text(
+                                            text = stringResource(R.string.btn_register),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        6 -> {
+                            // Elfelejtett jelszó — ugyanaz a page-minta, mint a többi step
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CookieShape,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.clickable(enabled = !loading) {
+                                        focusManager.clearFocus()
+                                        error = null
+                                        step = 0
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = stringResource(R.string.cd_back_to_login),
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.size(12.dp))
+                                Text(
+                                    text = stringResource(R.string.title_forgot_pw),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            StaggeredAppear(index = 1) {
+                                Text(
+                                    text = stringResource(R.string.forgot_body),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
+                            StaggeredAppear(index = 2) {
+                                OutlinedTextField(
+                                    value = forgotEmail,
+                                    onValueChange = { forgotEmail = it },
+                                    label = { Text(stringResource(R.string.label_email_addr)) },
+                                    singleLine = true,
+                                    enabled = !loading,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Email,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    keyboardActions = KeyboardActions(onDone = { sendForgotPassword() }),
+                                    shape = FieldShape,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            StaggeredAppear(index = 3) {
+                                Button(
+                                    onClick = { sendForgotPassword() },
+                                    enabled = !loading && forgotEmail.isNotBlank(),
+                                    shape = FieldShape,
+                                    colors = ButtonDefaults.buttonColors(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(56.dp)
+                                ) {
+                                    if (loading) {
+                                        ExpressiveLoader(
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            size = 20.dp,
+                                            strokeWidth = 2.5.dp
+                                        )
+                                    } else {
+                                        Text(
+                                            text = stringResource(R.string.btn_send),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -682,41 +1042,6 @@ fun LoginScreen(api: MavApi, onLoggedIn: () -> Unit) {
         focusManager.clearFocus()
         error = null
         step = 0
-    }
-
-    // Elfelejtett jelszó dialógus
-    if (showForgotDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showForgotDialog = false },
-            title = { Text(stringResource(R.string.title_forgot_pw)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        stringResource(R.string.forgot_body),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = forgotEmail,
-                        onValueChange = { forgotEmail = it },
-                        label = { Text(stringResource(R.string.label_email_addr)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { sendForgotPassword() }) {
-                    Text(stringResource(R.string.btn_send))
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showForgotDialog = false }) {
-                    Text(stringResource(R.string.btn_cancel))
-                }
-            }
-        )
     }
 }
 

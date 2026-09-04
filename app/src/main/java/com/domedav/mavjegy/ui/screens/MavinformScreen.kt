@@ -134,6 +134,7 @@ fun MavinformScreen(api: MavApi) {
             return
         }
         if (page == 0) loading = true else loadingMore = true
+        var pageOk = false
         try {
             val newItems = api.fetchMavinformList(page)
             if (page == 0) {
@@ -145,11 +146,18 @@ fun MavinformScreen(api: MavApi) {
             }
             hasMore = newItems.isNotEmpty()
             currentPage = page
+            pageOk = newItems.isNotEmpty()
         } catch (e: Exception) {
             if (allItems.isEmpty()) error = e.message ?: e.javaClass.simpleName
         } finally {
             loading = false
             loadingMore = false
+        }
+        // Aktív keresésnél a háttérben végiglapozunk, hogy a még be nem
+        // töltött oldalakon is keressen. Csak sikeres oldal után láncolunk,
+        // hiba esetén nem retry-loopolunk.
+        if (pageOk && hasMore && query.trim().isNotEmpty()) {
+            scope.launch { loadPage(currentPage + 1) }
         }
     }
 
@@ -201,7 +209,7 @@ fun MavinformScreen(api: MavApi) {
         if (q.isBlank()) sortedItems
         else sortedItems.filter {
             it.title.contains(q, ignoreCase = true) ||
-                categoryLabel(it.category).contains(q, ignoreCase = true)
+                context.getString(categoryLabelRes(it.category)).contains(q, ignoreCase = true)
         }
     }
 
@@ -354,7 +362,8 @@ fun MavinformScreen(api: MavApi) {
                 Column(
                     modifier = Modifier
                         .padding(20.dp)
-                        .fillMaxWidth()
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
                         text = selectedItem!!.title,
@@ -362,12 +371,23 @@ fun MavinformScreen(api: MavApi) {
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text(
-                        text = categoryLabel(selectedItem!!.category),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = categoryIcon(selectedItem!!.category),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = stringResource(categoryLabelRes(selectedItem!!.category)),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     if (detailLoading) {
                         Box(
                             modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
@@ -390,7 +410,8 @@ fun MavinformScreen(api: MavApi) {
                                 text = detailDescription,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(top = 16.dp)
+                                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.25f,
+                                modifier = Modifier.padding(top = 4.dp)
                             )
                         }
                     }
@@ -425,11 +446,11 @@ private fun categoryIcon(category: String): ImageVector = when (category) {
     else -> Icons.Rounded.Info
 }
 
-private fun categoryLabel(category: String): String = when (category) {
-    "vonat" -> "Vonat"
-    "busz" -> "Busz"
-    "helyi_busz" -> "Helyi busz"
-    else -> "Egyéb"
+private fun categoryLabelRes(category: String): Int = when (category) {
+    "vonat" -> R.string.news_cat_train
+    "busz" -> R.string.news_cat_bus
+    "helyi_busz" -> R.string.news_cat_local_bus
+    else -> R.string.news_cat_other
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -495,7 +516,7 @@ private fun MavinformCard(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        text = categoryLabel(item.category),
+                        text = stringResource(categoryLabelRes(item.category)),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (isPinned) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                                 else MaterialTheme.colorScheme.onSurfaceVariant

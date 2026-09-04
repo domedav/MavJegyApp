@@ -234,8 +234,11 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
         // koppintásra visszajön. Bármely interakció (tab, oldal, tap, húzás) reseteli.
         var peeked by remember { mutableStateOf(false) }
         val peekAnim = remember { Animatable(0f) } // 0 = bent, 1 = 60% kint
-        LaunchedEffect(peeked, selectedTab, pillSide) {
-            if (!peeked) {
+        // Húzás/koppintás közben az időzítő szünetel — különben húzás
+        // közben úszna ki a pill a kéz alól
+        var pillBusy by remember { mutableStateOf(false) }
+        LaunchedEffect(peeked, selectedTab, pillSide, pillBusy) {
+            if (!peeked && !pillBusy) {
                 delay(3000)
                 peeked = true
             }
@@ -279,6 +282,10 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                 .pointerInput(pillWidthPx) {
                     awaitEachGesture {
                         awaitFirstDown(pass = PointerEventPass.Initial)
+                        // Bármi interakció indul (tap, oldal- vagy selection-húzás):
+                        // pill azonnal vissza, timer szünetel a gesztus végéig
+                        peeked = false
+                        pillBusy = true
                         var horizontal = 0f
                         var vertical = 0f
                         var decided = false
@@ -309,12 +316,9 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                                 scope.launch { sideFraction.snapTo(newFraction) }
                             }
                         } while (event.changes.any { it.pressed } && !done)
-                        if (!decided) {
-                            // koppintás (nem húzás) -> pill visszahozása, eventet nem fogyasztjuk
-                            peeked = false
-                        }
+                        // Gesztus vége (tapot nem fogyasztottuk, az ikonoké marad)
+                        pillBusy = false
                         if (decided && isHorizontal) {
-                            peeked = false
                             // Elengedéskor a legközelebbi oldalra tapad – sosem középen.
                             // Flick-barát: pici elhúzás az ellenkező irányba is oldalt vált.
                             val currentSideIsRight = pillSide == 0
@@ -354,8 +358,9 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                 Column(
                     modifier = Modifier.pointerInput(itemSizePx) {
                         detectDragGestures(
-                            onDragStart = { },
+                            onDragStart = { pillBusy = true },
                             onDragEnd = {
+                                pillBusy = false
                                 val tabCount = 3
                                 val nearestTab = (dragOffset.value / itemSizePx).roundToInt()
                                     .coerceIn(0, tabCount - 1)
@@ -367,7 +372,8 @@ fun AppRoot(api: MavApi, onLogout: () -> Unit = {}) {
                                     )
                                     selectedTab = nearestTab
                                 }
-                            }
+                            },
+                            onDragCancel = { pillBusy = false }
                         ) { change, dragAmount ->
                             change.consume()
                             val maxOffset = 2 * itemSizePx

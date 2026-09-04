@@ -62,6 +62,7 @@
     <!-- Hibaüzenetek -->
     <string name="err_fill_all">Kérlek, töltsd ki az összes mezőt!</string>
     <string name="err_pw_mismatch">A két jelszó nem egyezik.</string>
+    <string name="err_weak_password">A jelszónak legalább 8 karakteresnek kell lennie, kis- és nagybetűt valamint számot kell tartalmaznia.</string>
     <string name="err_invalid_birth">Érvénytelen születési dátum. A formátum: yyyy.MM.dd.</string>
     <string name="err_no_biz">A jegyhez nem tartozik bizonylat-azonosító.</string>
     <string name="err_no_internet">Nincs internetkapcsolat.</string>
@@ -74,6 +75,14 @@
     <string name="news_error">Nem sikerült betölteni a híreket.</string>
     <string name="news_search_hint">Keresés a hírekben…</string>
     <string name="news_no_results">Nincsenek találatok.</string>
+    <string name="desc_reg_name">Add meg a vezeték- és keresztneved.</string>
+    <string name="desc_reg_email">Erre az email címre küldjük a visszaigazolást.</string>
+    <string name="desc_reg_birth">A kedvezményekhez szükség van a születési dátumodra.</string>
+    <string name="desc_reg_password">Legalább 8 karakter, kis- és nagybetűvel valamint számmal.</string>
+    <string name="news_cat_train">Vonat</string>
+    <string name="news_cat_bus">Busz</string>
+    <string name="news_cat_local_bus">Helyi busz</string>
+    <string name="news_cat_other">Egyéb</string>
 
     <!-- Hozzáférhetőségi leírások -->
     <string name="cd_refresh">Frissítés</string>
